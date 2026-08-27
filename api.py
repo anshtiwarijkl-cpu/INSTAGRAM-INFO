@@ -3,50 +3,53 @@ from flask_cors import CORS
 import instaloader
 import time
 import random
-import hashlib
+import os
 from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, db as firebase_db
-import os
-
-# ============================================================
-# FIREBASE INIT
-# ============================================================
-firebase_config = {
-    "apiKey": "AIzaSyCIOu1N7PEaDbrduIFPVpOBLw_upyefESE",
-    "authDomain": "ansh-aft.firebaseapp.com",
-    "databaseURL": "https://ansh-aft-default-rtdb.firebaseio.com",
-    "projectId": "ansh-aft",
-    "storageBucket": "ansh-aft.firebasestorage.app",
-    "messagingSenderId": "856621572011",
-    "appId": "1:856621572011:web:76f866cbea624c5f5c7cee"
-}
-
-# Initialize Firebase Admin
-cred = credentials.Certificate({
-    "type": "service_account",
-    "project_id": "ansh-aft",
-    "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID', ''),
-    "private_key": os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
-    "client_email": os.getenv('FIREBASE_CLIENT_EMAIL', ''),
-    "client_id": os.getenv('FIREBASE_CLIENT_ID', ''),
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_CERT_URL', '')
-})
-
-firebase_admin.initialize_app(cred, {
-    'databaseURL': firebase_config['databaseURL']
-})
-
-db = firebase_db
 
 # ============================================================
 # FLASK APP
 # ============================================================
 app = Flask(__name__)
 CORS(app)
+
+# ============================================================
+# FIREBASE INIT - USING YOUR CREDENTIALS
+# ============================================================
+def init_firebase():
+    try:
+        if firebase_admin._apps:
+            return True
+        
+        # Your credentials from .env
+        cred_dict = {
+            "type": os.getenv('FIREBASE_TYPE', 'service_account'),
+            "project_id": os.getenv('FIREBASE_PROJECT_ID', 'ansh-aft'),
+            "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID', ''),
+            "private_key": os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n').strip('"'),
+            "client_email": os.getenv('FIREBASE_CLIENT_EMAIL', ''),
+            "client_id": os.getenv('FIREBASE_CLIENT_ID', ''),
+            "auth_uri": os.getenv('FIREBASE_AUTH_URI', 'https://accounts.google.com/o/oauth2/auth'),
+            "token_uri": os.getenv('FIREBASE_TOKEN_URI', 'https://oauth2.googleapis.com/token'),
+            "auth_provider_x509_cert_url": os.getenv('FIREBASE_AUTH_PROVIDER_X509_CERT_URL', 'https://www.googleapis.com/oauth2/v1/certs'),
+            "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_X509_CERT_URL', '')
+        }
+        
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': os.getenv('FIREBASE_DATABASE_URL', 'https://ansh-aft-default-rtdb.firebaseio.com')
+        })
+        
+        print("🔥 Firebase initialized successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Firebase init error: {e}")
+        return False
+
+FIREBASE_READY = init_firebase()
+db = firebase_db if FIREBASE_READY else None
 
 # ============================================================
 # DEVICE FINGERPRINTS
@@ -106,9 +109,9 @@ def scan_instagram(username):
             'owner': 'ANSH_AFT'
         }
     except instaloader.exceptions.ProfileNotExistsException:
-        return {'status': 'error', 'error': '❌ Profile @{} does not exist'.format(username), 'code': 'INVALID_USER'}
+        return {'status': 'error', 'error': f'❌ Profile @{username} does not exist', 'code': 'INVALID_USER'}
     except instaloader.exceptions.PrivateProfileNotFollowedException:
-        return {'status': 'error', 'error': '🔒 Profile @{} is private'.format(username), 'code': 'PRIVATE_ACCOUNT'}
+        return {'status': 'error', 'error': f'🔒 Profile @{username} is private', 'code': 'PRIVATE_ACCOUNT'}
     except Exception as e:
         return {'status': 'error', 'error': str(e)[:100], 'code': 'SCAN_ERROR'}
 
@@ -119,12 +122,13 @@ def scan_instagram(username):
 def scan_profile():
     start_time = time.time()
     
-    # Get API key
+    if not db:
+        return jsonify({'status': 'error', 'error': '❌ Firebase not connected', 'code': 'DB_ERROR'}), 500
+    
     api_key = request.headers.get('X-API-Key')
     if not api_key:
         return jsonify({'status': 'error', 'error': '❌ API key required', 'code': 'NO_API_KEY'}), 401
     
-    # Validate API key
     users_ref = db.reference('users')
     users = users_ref.get()
     if not users:
@@ -144,42 +148,23 @@ def scan_profile():
     if user.get('active') == False:
         return jsonify({'status': 'error', 'error': '⛔ User account is disabled', 'code': 'ACCOUNT_DISABLED'}), 403
     
-    # Check API status
     settings_ref = db.reference('settings')
     settings = settings_ref.get() or {}
     api_status = settings.get('api_status', 'online')
     
     if api_status == 'offline':
-        return jsonify({
-            'status': 'error',
-            'error': '❌ API is currently OFFLINE. Please try again later.',
-            'code': 'API_OFFLINE'
-        }), 503
-    
+        return jsonify({'status': 'error', 'error': '❌ API is OFFLINE', 'code': 'API_OFFLINE'}), 503
     if api_status == 'maintenance':
-        return jsonify({
-            'status': 'error',
-            'error': '🔧 API is under MAINTENANCE. Please try again later.',
-            'code': 'MAINTENANCE'
-        }), 503
+        return jsonify({'status': 'error', 'error': '🔧 API under MAINTENANCE', 'code': 'MAINTENANCE'}), 503
     
-    # Check limits
     plan = user.get('plan', 'free')
     limit_key = 'premium_limit' if plan == 'premium' else 'free_limit'
     limit = settings.get(limit_key, 10000 if plan == 'premium' else 1000)
     current_requests = user.get('requests_count', 0)
     
     if current_requests >= limit:
-        return jsonify({
-            'status': 'error',
-            'error': f'⚠️ {plan.upper()} limit exceeded! {current_requests}/{limit}',
-            'code': 'LIMIT_EXCEEDED',
-            'plan': plan,
-            'current': current_requests,
-            'limit': limit
-        }), 429
+        return jsonify({'status': 'error', 'error': f'⚠️ {plan.upper()} limit exceeded!', 'code': 'LIMIT_EXCEEDED'}), 429
     
-    # Get username
     data = request.get_json()
     if not data or 'username' not in data:
         return jsonify({'status': 'error', 'error': '❌ Username required', 'code': 'NO_USERNAME'}), 400
@@ -188,10 +173,8 @@ def scan_profile():
     if not username:
         return jsonify({'status': 'error', 'error': '❌ Username cannot be empty', 'code': 'EMPTY_USERNAME'}), 400
     
-    # Scan
     result = scan_instagram(username)
     
-    # Log
     log_ref = db.reference('logs')
     log_ref.push({
         'api_key': api_key,
@@ -201,7 +184,6 @@ def scan_profile():
         'timestamp': datetime.now().isoformat()
     })
     
-    # Increment count
     today = datetime.now().strftime('%Y-%m-%d')
     if result.get('status') == 'success':
         users_ref.child(user_id).update({
@@ -223,30 +205,32 @@ def scan_profile():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    settings_ref = db.reference('settings')
-    settings = settings_ref.get() or {}
-    
-    users_ref = db.reference('users')
-    users = users_ref.get() or {}
-    
     return jsonify({
         'status': 'running',
-        'api_status': settings.get('api_status', 'online'),
-        'maintenance': settings.get('api_status') == 'maintenance',
-        'total_users': len(users),
-        'uptime': datetime.now().isoformat(),
-        'version': '2.0.0',
+        'firebase_connected': bool(db),
+        'timestamp': datetime.now().isoformat(),
         'developer': 'DeveloperBhai',
         'owner': 'ANSH_AFT'
     })
 
-# ============================================================
-# RUN
-# ============================================================
+@app.route('/', methods=['GET'])
+def home():
+    return jsonify({
+        'service': 'Instagram Scanner API',
+        'version': '2.0.0',
+        'status': 'running',
+        'endpoints': {
+            '/api/scan': 'POST - Scan Instagram profile (requires X-API-Key)',
+            '/api/health': 'GET - Health check'
+        },
+        'developer': 'DeveloperBhai',
+        'owner': 'ANSH_AFT',
+        'channel': 'https://t.me/+iDnVRYTDnAJmNDE1',
+        'backup_channel': 'https://t.me/+aWlMH56c06ZiZTE1'
+    })
+
 if __name__ == '__main__':
     print('🔥 Instagram Scanner API Started!')
     print('👑 Owner: ANSH_AFT')
     print('💻 Developer: DeveloperBhai')
-    print('🔑 Login: ANSHAFT127987 / ANSHAFTAK47')
-    print('📊 API Endpoint: /api/scan')
     app.run(host='0.0.0.0', port=5000, debug=True)
