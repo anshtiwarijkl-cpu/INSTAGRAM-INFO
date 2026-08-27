@@ -1,0 +1,15 @@
+{
+    "name": "instagram-scanner-api",
+    "version": "2.0.0",
+    "description": "Instagram Scanner API with Premium Admin Panel",
+    "main": "api.py",
+    "scripts": {
+        "start": "python api.py",
+        "dev": "python api.py"
+    },
+    "dependencies": {
+        "firebase": "^9.22.0"
+    },
+    "author": "ANSH_AFT",
+    "license": "MIT"
+}
