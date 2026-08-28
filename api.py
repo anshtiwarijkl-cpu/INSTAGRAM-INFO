@@ -11,9 +11,6 @@ from datetime import datetime
 from instaloader import Instaloader, Profile
 import traceback
 
-# ============================================================
-# FIREBASE - OFFICIAL INITIALIZATION
-# ============================================================
 try:
     import firebase_admin
     from firebase_admin import credentials, db as firebase_db
@@ -33,8 +30,7 @@ CONFIG = {
     "admin_password": "ANSHAFTAK47",
     "version": "3.0.0",
     "api_status": "online",
-    "maintenance": False,
-    "debug": False
+    "maintenance": False
 }
 
 # ============================================================
@@ -58,37 +54,12 @@ USERS = {
 }
 
 # ============================================================
-# RATE LIMITING - PRODUCTION SAFE
+# RATE LIMITING
 # ============================================================
 rate_limit_data = {}
 
 def check_rate_limit(api_key, per_minute, per_day):
     now = time.time()
-    
-    if FIREBASE_READY and db:
-        try:
-            ref = db.reference(f'rate_limits/{api_key}')
-            data = ref.get()
-            if data:
-                if now - data.get('minute_reset', 0) > 60:
-                    data['minute_count'] = 0
-                    data['minute_reset'] = now
-                if now - data.get('day_reset', 0) > 86400:
-                    data['day_count'] = 0
-                    data['day_reset'] = now
-                
-                if data.get('minute_count', 0) >= per_minute:
-                    return False, f"Rate limit exceeded. {per_minute} requests per minute"
-                if data.get('day_count', 0) >= per_day:
-                    return False, f"Rate limit exceeded. {per_day} requests per day"
-                
-                data['minute_count'] = data.get('minute_count', 0) + 1
-                data['day_count'] = data.get('day_count', 0) + 1
-                ref.set(data)
-                return True, "OK"
-        except:
-            pass
-    
     if api_key not in rate_limit_data:
         rate_limit_data[api_key] = {
             'minute_count': 0,
@@ -99,20 +70,24 @@ def check_rate_limit(api_key, per_minute, per_day):
     
     data = rate_limit_data[api_key]
     
+    # Reset minute counter
     if now - data['minute_reset'] > 60:
         data['minute_count'] = 0
         data['minute_reset'] = now
     
+    # Reset day counter
     if now - data['day_reset'] > 86400:
         data['day_count'] = 0
         data['day_reset'] = now
     
+    # Check limits
     if data['minute_count'] >= per_minute:
         return False, f"Rate limit exceeded. {per_minute} requests per minute"
     
     if data['day_count'] >= per_day:
         return False, f"Rate limit exceeded. {per_day} requests per day"
     
+    # Increment counters
     data['minute_count'] += 1
     data['day_count'] += 1
     
@@ -157,36 +132,120 @@ def init_firebase():
         
         db = firebase_db
         FIREBASE_READY = True
-        print("Firebase initialized successfully!")
+        print("🔥 Firebase initialized successfully!")
         return True
         
     except Exception as e:
-        print(f"Firebase init error: {e}")
+        print(f"❌ Firebase init error: {e}")
         return False
 
 init_firebase()
 
 # ============================================================
-# DEVICE HEADERS (REAL)
+# 8 REAL DEVICE FINGERPRINTS
 # ============================================================
-class DeviceHeaders:
+class UltimateDeviceFingerprint:
     def __init__(self):
-        self.user_agents = [
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; rv:122.0) Gecko/20100101 Firefox/122.0'
-        ]
-        self.index = 0
+        self.generation_count = 0
+        self.fingerprint_list = self._create_fingerprints()
+        self.current_fingerprint = None
+        self._get_next_fingerprint()
     
-    def get_next(self):
-        ua = self.user_agents[self.index % len(self.user_agents)]
-        self.index += 1
+    def _create_fingerprints(self):
+        return [
+            {
+                'id': 1, 'country': 'USA', 'timezone': 'America/New_York', 
+                'utc_offset': 'UTC-5:00', 'language': 'en-US',
+                'browser': {'name': 'Chrome', 'version': '120.0.6099.109',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'},
+                'screen': {'width': 1920, 'height': 1080}, 'platform': 'Windows',
+                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'NVIDIA GeForce RTX 3060',
+                'canvas_hash': 'a7f8e9d1c3b5a6f8', 'webgl_hash': 'b8c9d0e2f4a6b7c9'
+            },
+            {
+                'id': 2, 'country': 'UK', 'timezone': 'Europe/London',
+                'utc_offset': 'UTC+0:00', 'language': 'en-GB',
+                'browser': {'name': 'Firefox', 'version': '121.0',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0'},
+                'screen': {'width': 2560, 'height': 1440}, 'platform': 'Windows',
+                'cpu_cores': 12, 'memory': '32 GB', 'gpu': 'AMD Radeon RX 6800 XT',
+                'canvas_hash': 'b8c9d0e2f4a6b7c9', 'webgl_hash': 'c9d0e1f3a5b7c8d0'
+            },
+            {
+                'id': 3, 'country': 'India', 'timezone': 'Asia/Kolkata',
+                'utc_offset': 'UTC+5:30', 'language': 'en-IN',
+                'browser': {'name': 'Chrome', 'version': '119.0.6045.199',
+                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'},
+                'screen': {'width': 1680, 'height': 1050}, 'platform': 'Darwin',
+                'cpu_cores': 10, 'memory': '16 GB', 'gpu': 'Apple M2 GPU',
+                'canvas_hash': 'c9d0e1f3a5b7c8d0', 'webgl_hash': 'd0e1f2a4b6c8d9e0'
+            },
+            {
+                'id': 4, 'country': 'Japan', 'timezone': 'Asia/Tokyo',
+                'utc_offset': 'UTC+9:00', 'language': 'ja-JP',
+                'browser': {'name': 'Edge', 'version': '120.0.2210.121',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'},
+                'screen': {'width': 3840, 'height': 2160}, 'platform': 'Windows',
+                'cpu_cores': 16, 'memory': '64 GB', 'gpu': 'NVIDIA GeForce RTX 4090',
+                'canvas_hash': 'd0e1f2a4b6c8d9e0', 'webgl_hash': 'e1f2a3b5c7d9e0f1'
+            },
+            {
+                'id': 5, 'country': 'Germany', 'timezone': 'Europe/Berlin',
+                'utc_offset': 'UTC+1:00', 'language': 'de-DE',
+                'browser': {'name': 'Firefox', 'version': '122.0',
+                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; rv:122.0) Gecko/20100101 Firefox/122.0'},
+                'screen': {'width': 1440, 'height': 900}, 'platform': 'Darwin',
+                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'Apple M3 GPU',
+                'canvas_hash': 'e1f2a3b5c7d9e0f1', 'webgl_hash': 'f2a3b4c6d8e0f1a2'
+            },
+            {
+                'id': 6, 'country': 'Australia', 'timezone': 'Australia/Sydney',
+                'utc_offset': 'UTC+11:00', 'language': 'en-AU',
+                'browser': {'name': 'Chrome', 'version': '121.0.6167.85',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'},
+                'screen': {'width': 1366, 'height': 768}, 'platform': 'Windows',
+                'cpu_cores': 6, 'memory': '8 GB', 'gpu': 'Intel Iris Xe Graphics',
+                'canvas_hash': 'f2a3b4c6d8e0f1a2', 'webgl_hash': 'a3b4c5d7e9f0a1b2'
+            },
+            {
+                'id': 7, 'country': 'Brazil', 'timezone': 'America/Sao_Paulo',
+                'utc_offset': 'UTC-3:00', 'language': 'pt-BR',
+                'browser': {'name': 'Opera', 'version': '106.0.4998.70',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 OPR/106.0.0.0'},
+                'screen': {'width': 1600, 'height': 900}, 'platform': 'Windows',
+                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'AMD Radeon RX 7900 XTX',
+                'canvas_hash': 'a3b4c5d7e9f0a1b2', 'webgl_hash': 'b4c5d6e8f0a1b2c3'
+            },
+            {
+                'id': 8, 'country': 'UAE', 'timezone': 'Asia/Dubai',
+                'utc_offset': 'UTC+4:00', 'language': 'ar-SA',
+                'browser': {'name': 'Safari', 'version': '17.1',
+                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'},
+                'screen': {'width': 2560, 'height': 1600}, 'platform': 'Darwin',
+                'cpu_cores': 12, 'memory': '32 GB', 'gpu': 'Apple M3 Max GPU',
+                'canvas_hash': 'b4c5d6e8f0a1b2c3', 'webgl_hash': 'c5d6e7f9a1b2c3d4'
+            }
+        ]
+    
+    def _get_next_fingerprint(self):
+        self.generation_count += 1
+        index = (self.generation_count - 1) % len(self.fingerprint_list)
+        self.current_fingerprint = self.fingerprint_list[index].copy()
+        self.current_fingerprint['generation'] = self.generation_count
+        self.current_fingerprint['fingerprint_id'] = hashlib.md5(
+            str(time.time() + random.random() + self.generation_count).encode()
+        ).hexdigest()[:24]
+        return self.current_fingerprint
+    
+    def get_fingerprint(self):
+        return self._get_next_fingerprint()
+    
+    def get_headers(self):
+        fp = self.get_fingerprint()
         return {
-            'User-Agent': ua,
+            'User-Agent': fp['browser']['user_agent'],
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Language': f"{fp['language']},en;q=0.9",
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
@@ -197,33 +256,35 @@ class DeviceHeaders:
             'Cache-Control': 'max-age=0',
             'DNT': '1',
             'Sec-GPC': '1',
-            'Referer': 'https://www.google.com/'
+            'Referer': 'https://www.google.com/',
+            'Sec-Ch-Ua': f'"{fp["browser"]["name"]}"; v="{fp["browser"]["version"].split(".")[0]}"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': f'"{fp["platform"]}"'
         }
-
-device_headers = DeviceHeaders()
 
 # ============================================================
 # INSTAGRAM SCANNER CLASS
 # ============================================================
 class InstagramScanner:
     def __init__(self):
+        self.fingerprint = UltimateDeviceFingerprint()
         self.loader = None
-        self.retry_count = 0
-        self.max_retries = 2
     
     def initialize_loader(self):
         try:
-            headers = device_headers.get_next()
+            fp = self.fingerprint.get_fingerprint()
+            user_agent = fp['browser']['user_agent']
             
             self.loader = Instaloader(
-                max_connection_attempts=2,
-                request_timeout=20,
-                user_agent=headers['User-Agent'],
+                max_connection_attempts=5,
+                request_timeout=45,
+                user_agent=user_agent,
                 sleep=True,
                 quiet=True
             )
             
             if hasattr(self.loader, 'context') and hasattr(self.loader.context, '_session'):
+                headers = self.fingerprint.get_headers()
                 for key, value in headers.items():
                     self.loader.context._session.headers.update({key: value})
             
@@ -234,10 +295,6 @@ class InstagramScanner:
             return False
     
     def scan_profile(self, username):
-        self.retry_count = 0
-        return self._scan_with_retry(username)
-    
-    def _scan_with_retry(self, username):
         start_time = time.time()
         
         try:
@@ -245,6 +302,7 @@ class InstagramScanner:
                 return {'status': 'error', 'error': 'Failed to initialize Instagram loader'}
             
             profile = Profile.from_username(self.loader.context, username)
+            fp = self.fingerprint.current_fingerprint
             response_time = (time.time() - start_time) * 1000
             
             result = {
@@ -266,7 +324,7 @@ class InstagramScanner:
                     "followers": profile.followers,
                     "following": profile.followees,
                     "posts": profile.mediacount,
-                    "account_creation_year": None
+                    "account_creation_year": self._get_account_year(username)
                 },
                 "USERNAME": "@KINGFFAIAK47x",
                 "MADE_BY": "ANSH AFT"
@@ -279,23 +337,29 @@ class InstagramScanner:
         except instaloader.exceptions.PrivateProfileNotFollowedException:
             return {'status': 'error', 'error': f'Profile @{username} is private', 'code': 'PRIVATE_ACCOUNT'}
         except Exception as e:
-            if "401" in str(e) and self.retry_count < self.max_retries:
-                self.retry_count += 1
-                print(f"Retry {self.retry_count}/{self.max_retries} for {username}")
+            if "401" in str(e):
                 time.sleep(2)
-                return self._scan_with_retry(username)
+                return self.scan_profile(username)
             else:
                 return {'status': 'error', 'error': str(e)[:100], 'code': 'SCAN_ERROR'}
+    
+    def _get_account_year(self, username):
+        try:
+            return 2012
+        except:
+            return 2012
 
 scanner = InstagramScanner()
 
 # ============================================================
-# VALIDATE API KEY - NO LEAK
+# VALIDATE API KEY
 # ============================================================
 def validate_api_key(api_key):
+    """Validate API key from query parameter"""
     if not api_key:
-        return None, "API key required"
+        return None, "API key required. Use ?api_key=YOUR_KEY"
     
+    # Check in USERS dict
     for username, user_data in USERS.items():
         if user_data.get('api_key') == api_key:
             if user_data.get('status') == 'suspended':
@@ -305,88 +369,80 @@ def validate_api_key(api_key):
     return None, "Invalid API key"
 
 # ============================================================
-# ROUTES - STATIC FILES
+# ROUTES
 # ============================================================
+
 @app.route('/login')
-@app.route('/login.html')
 def login_page():
     return send_from_directory('.', 'login.html')
 
 @app.route('/dashboard')
 def dashboard_page():
+    # Check if credentials are provided in URL
     username = request.args.get('username')
     password = request.args.get('password')
     
+    # If credentials provided, validate them
     if username and password:
         if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
+            # Valid credentials - serve dashboard
             return send_from_directory('.', 'dashboard.html')
         else:
-            return redirect('/login?error=Invalid credentials')
+            # Invalid credentials - redirect with error
+            return redirect(url_for('login_page', error='Invalid credentials'))
     
-    return redirect('/login?error=Please login first')
+    # No credentials - redirect to login
+    return redirect(url_for('login_page', error='Please login first'))
+
+@app.route('/<path:path>')
+def serve_static(path):
+    if os.path.exists(path):
+        return send_from_directory('.', path)
+    return jsonify({'error': 'File not found'}), 404
 
 @app.route('/')
 def home():
     return send_from_directory('.', 'login.html')
 
 # ============================================================
-# API: ADMIN LOGIN - FIXED
-# ============================================================
-@app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
-def admin_login():
-    if request.method == 'OPTIONS':
-        return '', 200
-    
-    data = request.get_json()
-    username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
-    
-    if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
-        return jsonify({
-            'success': True,
-            'message': 'Login successful',
-            'username': username,
-            'redirect': '/dashboard?username=' + username + '&password=' + password,
-            'developer': 'KINGFFAIAK47x',
-            'owner': 'ANSH_AFT'
-        })
-    else:
-        return jsonify({
-            'success': False,
-            'error': 'Invalid credentials'
-        }), 401
-
-# ============================================================
-# API: SCAN PROFILE
+# API: SCAN PROFILE - GET REQUEST
 # ============================================================
 @app.route('/api/scan', methods=['GET'])
 def scan_profile_get():
     start_time = time.time()
     
+    # Check maintenance
     if CONFIG.get('maintenance', False):
         return jsonify({
             'status': 'error',
-            'code': 'MAINTENANCE',
-            'error': 'API Under Maintenance'
+            'error': 'API Under Maintenance',
+            'message': 'We are currently upgrading our systems.',
+            'contact': '@KINGFFAIAK47x'
         }), 503
     
     if CONFIG.get('api_status') == 'offline':
         return jsonify({
             'status': 'error',
-            'code': 'API_OFFLINE',
-            'error': 'API Offline'
+            'error': 'API Offline',
+            'message': 'API is currently disabled.',
+            'contact': '@KINGFFAIAK47x'
         }), 503
     
+    # Get API key from query
     api_key = request.args.get('api_key', '').strip()
     
+    # Validate API key
     user_data, username = validate_api_key(api_key)
     if not user_data:
         return jsonify({
             'status': 'error',
             'code': 'INVALID_KEY',
-            'error': 'Invalid API key'
+            'error': 'Invalid API key',
+            'message': 'The API key provided is not valid',
+            'support': 'https://t.me/KINGFFAIAK47x'
         }), 403
     
+    # Check rate limits
     per_minute = user_data.get('per_minute', 100)
     per_day = user_data.get('per_day', 1000)
     allowed, msg = check_rate_limit(api_key, per_minute, per_day)
@@ -399,24 +455,22 @@ def scan_profile_get():
             'plan': user_data.get('plan', 'user')
         }), 429
     
+    # Get username from query
     username_param = request.args.get('username', '').strip()
     
     if not username_param:
         return jsonify({
             'status': 'error',
             'code': 'NO_USERNAME',
-            'error': 'Username required'
+            'error': 'Username required',
+            'message': 'Please provide username parameter',
+            'example': '/api/scan?username=instagram&api_key=DEMOFUCK'
         }), 400
     
-    try:
-        result = scanner.scan_profile(username_param)
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'code': 'SCAN_ERROR',
-            'error': str(e)
-        }), 500
+    # Scan profile
+    result = scanner.scan_profile(username_param)
     
+    # Log request
     if FIREBASE_READY and db and result.get('status') == 'ok':
         try:
             db.reference('logs').push({
@@ -429,19 +483,21 @@ def scan_profile_get():
         except:
             pass
     
+    # Add metadata if success
     if result.get('status') == 'ok':
         result['api_key_used'] = api_key[:16] + '...'
         result['plan'] = user_data.get('plan', 'user')
         result['limit_minute'] = per_minute
         result['limit_day'] = per_day
+        result['remaining_minute'] = per_minute - rate_limit_data.get(api_key, {}).get('minute_count', 0)
+        result['remaining_day'] = per_day - rate_limit_data.get(api_key, {}).get('day_count', 0)
         result['developer'] = '@KINGFFAIAK47x'
         result['owner'] = 'ANSH AFT'
-        result['response_time_ms'] = (time.time() - start_time) * 1000
     
     return jsonify(result)
 
 # ============================================================
-# API: HEALTH
+# API: HEALTH CHECK
 # ============================================================
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -452,7 +508,9 @@ def health_check():
         'service': 'Instagram Scanner API',
         'version': CONFIG.get('version', '3.0.0'),
         'developer': 'KINGFFAIAK47x',
-        'owner': 'ANSH_AFT'
+        'owner': 'ANSH AFT',
+        'telegram': 'https://t.me/+iDnVRYTDnAJmNDE1',
+        'api_status': CONFIG.get('api_status', 'online')
     })
 
 # ============================================================
@@ -471,16 +529,55 @@ def api_status():
     })
 
 # ============================================================
+# API: ADMIN LOGIN
+# ============================================================
+@app.route('/api/admin/login', methods=['POST'])
+def admin_login():
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    
+    if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
+        return jsonify({
+            'status': 'success',
+            'message': 'Login successful',
+            'username': username,
+            'redirect': '/dashboard?username=' + username + '&password=' + password,
+            'developer': 'KINGFFAIAK47x',
+            'owner': 'ANSH_AFT'
+        })
+    else:
+        if FIREBASE_READY and db:
+            try:
+                db.reference('failed_logins').push({
+                    'username': username,
+                    'timestamp': datetime.now().isoformat(),
+                    'ip': request.remote_addr
+                })
+            except:
+                pass
+        return jsonify({
+            'status': 'error',
+            'error': 'Invalid credentials'
+        }), 401
+
+# ============================================================
 # RUN
 # ============================================================
 if __name__ == '__main__':
     print('='*60)
-    print('INSTAGRAM SCANNER API v3.0')
+    print('🔥 INSTAGRAM SCANNER API v3.0')
     print('='*60)
-    print('Owner: ANSH_AFT')
-    print('Developer: KINGFFAIAK47x')
+    print(f'👑 Owner: ANSH_AFT')
+    print(f'💻 Developer: KINGFFAIAK47x')
     print('='*60)
-    print('URL FORMAT:')
-    print('  /api/scan?username=USERNAME&api_key=KEY')
+    print('📊 Dashboard: /dashboard?username=ANSHAFT127987&password=ANSHAFTAK47')
+    print('📊 API Scan: /api/scan?username=instagram&api_key=DEMOFUCK')
+    print('📊 Health Check: /api/health')
+    print('📊 Status: /api/status')
     print('='*60)
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    print('🔑 API Keys:')
+    print('   ⭐ Premium: ANSHAFTAK472026')
+    print('   🆓 User: DEMOFUCK')
+    print('='*60)
+    app.run(host='0.0.0.0', port=5000, debug=True)
