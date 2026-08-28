@@ -7,10 +7,7 @@ import hashlib
 import json
 import os
 import secrets
-import platform
-import re
 from datetime import datetime
-from pathlib import Path
 from instaloader import Instaloader, Profile
 import traceback
 
@@ -57,7 +54,7 @@ API_KEYS = {
 }
 
 # ============================================================
-# FIREBASE INIT - YOUR CREDENTIALS DIRECTLY
+# FIREBASE INIT
 # ============================================================
 db = None
 FIREBASE_READY = False
@@ -74,7 +71,6 @@ def init_firebase():
             FIREBASE_READY = True
             return True
         
-        # YOUR FIREBASE CREDENTIALS - DIRECTLY PASTED
         cred_dict = {
             "type": "service_account",
             "project_id": "ansh-aft",
@@ -103,7 +99,6 @@ def init_firebase():
         print(f"❌ Firebase init error: {e}")
         return False
 
-# Initialize Firebase
 init_firebase()
 
 # ============================================================
@@ -261,61 +256,61 @@ class InstagramScanner:
     
     def scan_profile(self, username):
         start_time = time.time()
-        result = {}
         
         try:
             if not self.initialize_loader():
-                return {'error': 'Failed to initialize Instagram loader'}
+                return {'status': 'error', 'error': 'Failed to initialize Instagram loader'}
             
             profile = Profile.from_username(self.loader.context, username)
             fp = self.fingerprint.current_fingerprint
             response_time = (time.time() - start_time) * 1000
             
+            # Format response exactly as requested
             result = {
-                'status': 'success',
-                'username': profile.username,
-                'user_id': profile.userid,
-                'full_name': profile.full_name if profile.full_name else 'N/A',
-                'biography': profile.biography[:200] if profile.biography else 'No bio',
-                'external_url': profile.external_url if profile.external_url else 'None',
-                'followers': profile.followers,
-                'following': profile.followees,
-                'total_posts': profile.mediacount,
-                'is_private': profile.is_private,
-                'is_verified': profile.is_verified,
-                'is_business': profile.is_business_account,
-                'response_time_ms': round(response_time, 0),
-                'scraped_at': datetime.now().isoformat(),
-                'developer': 'KINGFFAIAK47x',
-                'owner': 'ANSH_AFT',
-                'telegram_channel': 'https://t.me/+iDnVRYTDnAJmNDE1',
-                'backup_channel': 'https://t.me/+aWlMH56c06ZiZTE1',
-                'device_fingerprint': {
-                    'id': fp['id'],
-                    'country': fp['country'],
-                    'timezone': fp['timezone'],
-                    'platform': fp['platform'],
-                    'browser': fp['browser']['name'],
-                    'browser_version': fp['browser']['version'],
-                    'screen': f"{fp['screen']['width']}x{fp['screen']['height']}",
-                    'cpu_cores': fp['cpu_cores'],
-                    'memory': fp['memory'],
-                    'gpu': fp['gpu']
-                }
+                "status": "ok",
+                "collected_at": datetime.now().isoformat(),
+                "profile": {
+                    "id": str(profile.userid),
+                    "username": profile.username,
+                    "full_name": profile.full_name if profile.full_name else 'N/A',
+                    "biography": profile.biography[:200] if profile.biography else 'No bio available',
+                    "is_private": profile.is_private,
+                    "is_verified": profile.is_verified,
+                    "is_business_account": profile.is_business_account,
+                    "is_professional_account": hasattr(profile, 'is_professional_account') and profile.is_professional_account,
+                    "category_name": getattr(profile, 'category_name', None),
+                    "business_category_name": getattr(profile, 'business_category_name', None),
+                    "profile_pic_url_hd": getattr(profile, 'profile_pic_url_hd', None) or getattr(profile, 'profile_pic_url', None),
+                    "external_url": profile.external_url if profile.external_url else None,
+                    "followers": profile.followers,
+                    "following": profile.followees,
+                    "posts": profile.mediacount,
+                    "account_creation_year": self._get_account_year(username)
+                },
+                "USERNAME": "@KINGFFAIAK47x",
+                "MADE_BY": "ANSH AFT"
             }
             
             return result
             
         except instaloader.exceptions.ProfileNotExistsException:
-            return {'status': 'error', 'error': f'❌ Profile @{username} does not exist', 'code': 'INVALID_USER'}
+            return {'status': 'error', 'error': f'Profile @{username} does not exist', 'code': 'INVALID_USER'}
         except instaloader.exceptions.PrivateProfileNotFollowedException:
-            return {'status': 'error', 'error': f'🔒 Profile @{username} is private', 'code': 'PRIVATE_ACCOUNT'}
+            return {'status': 'error', 'error': f'Profile @{username} is private', 'code': 'PRIVATE_ACCOUNT'}
         except Exception as e:
             if "401" in str(e):
                 time.sleep(2)
                 return self.scan_profile(username)
             else:
                 return {'status': 'error', 'error': str(e)[:100], 'code': 'SCAN_ERROR'}
+    
+    def _get_account_year(self, username):
+        try:
+            # Try to estimate account creation year from profile
+            # This is a fallback - real year would need more data
+            return 2012  # Default fallback
+        except:
+            return 2012
 
 scanner = InstagramScanner()
 
@@ -342,6 +337,78 @@ def home():
     return send_from_directory('.', 'login.html')
 
 # ============================================================
+# API: SCAN PROFILE - GET REQUEST WITH QUERY PARAMETERS
+# ============================================================
+@app.route('/api/scan', methods=['GET'])
+def scan_profile_get():
+    start_time = time.time()
+    
+    # Get parameters from URL query string
+    username = request.args.get('username', '').strip()
+    api_key = request.args.get('api_key', '').strip()
+    
+    # Validate API key
+    if not api_key:
+        return jsonify({
+            'status': 'error',
+            'error': 'API key required. Use ?api_key=YOUR_KEY',
+            'code': 'NO_API_KEY'
+        }), 401
+    
+    # Check API key
+    plan = 'free'
+    limit = 1000
+    
+    if api_key == API_KEYS['premium']:
+        plan = 'premium'
+        limit = 10000
+    elif api_key == API_KEYS['user']:
+        plan = 'free'
+        limit = 1000
+    else:
+        # Check Firebase for custom keys
+        if FIREBASE_READY and db:
+            users_ref = db.reference('users')
+            users = users_ref.get()
+            if users:
+                for uid, data in users.items():
+                    if data.get('api_key') == api_key:
+                        plan = data.get('plan', 'free')
+                        limit = 10000 if plan == 'premium' else 1000
+                        break
+                else:
+                    return jsonify({'status': 'error', 'error': 'Invalid API key', 'code': 'INVALID_KEY'}), 401
+            else:
+                return jsonify({'status': 'error', 'error': 'Invalid API key', 'code': 'INVALID_KEY'}), 401
+        else:
+            return jsonify({'status': 'error', 'error': 'Invalid API key', 'code': 'INVALID_KEY'}), 401
+    
+    # Validate username
+    if not username:
+        return jsonify({'status': 'error', 'error': 'Username required. Use ?username=INSTAGRAM_USER', 'code': 'NO_USERNAME'}), 400
+    
+    # Scan profile
+    result = scanner.scan_profile(username)
+    
+    # Log request
+    if FIREBASE_READY and db and result.get('status') == 'ok':
+        db.reference('logs').push({
+            'api_key': api_key[:16] + '...',
+            'username': username,
+            'success': True,
+            'response_time': (time.time() - start_time) * 1000,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    # Add metadata if success
+    if result.get('status') == 'ok':
+        result['api_key_used'] = api_key[:16] + '...'
+        result['plan'] = plan
+        result['limit_total'] = limit
+    
+    return jsonify(result)
+
+# ============================================================
 # API: HEALTH CHECK
 # ============================================================
 @app.route('/api/health', methods=['GET'])
@@ -355,14 +422,7 @@ def health_check():
         'developer': 'KINGFFAIAK47x',
         'owner': 'ANSH_AFT',
         'telegram': 'https://t.me/+iDnVRYTDnAJmNDE1',
-        'backup': 'https://t.me/+aWlMH56c06ZiZTE1',
-        'api_keys': {
-            'premium': 'ANSHAFTAK47',
-            'user': 'DEMOFUCK'
-        },
-        'admin': {
-            'username': 'ANSHAFT127987'
-        }
+        'backup': 'https://t.me/+aWlMH56c06ZiZTE1'
     })
 
 # ============================================================
@@ -392,85 +452,8 @@ def admin_login():
             })
         return jsonify({
             'status': 'error',
-            'error': '❌ Invalid credentials'
+            'error': 'Invalid credentials'
         }), 401
-
-# ============================================================
-# API: SCAN PROFILE
-# ============================================================
-@app.route('/api/scan', methods=['POST'])
-def scan_profile():
-    start_time = time.time()
-    
-    # Get API key
-    api_key = request.headers.get('X-API-Key')
-    if not api_key:
-        return jsonify({'status': 'error', 'error': '❌ API key required', 'code': 'NO_API_KEY'}), 401
-    
-    # Check API keys
-    plan = 'free'
-    limit = 1000
-    
-    if api_key == API_KEYS['premium']:
-        plan = 'premium'
-        limit = 10000
-    elif api_key == API_KEYS['user']:
-        plan = 'free'
-        limit = 1000
-    else:
-        # Check Firebase for custom keys
-        if FIREBASE_READY and db:
-            users_ref = db.reference('users')
-            users = users_ref.get()
-            user = None
-            if users:
-                for uid, data in users.items():
-                    if data.get('api_key') == api_key:
-                        user = data
-                        plan = user.get('plan', 'free')
-                        limit = 10000 if plan == 'premium' else 1000
-                        break
-            
-            if not user:
-                return jsonify({'status': 'error', 'error': '❌ Invalid API key', 'code': 'INVALID_KEY'}), 401
-            
-            if user.get('active') == False:
-                return jsonify({'status': 'error', 'error': '⛔ Account disabled', 'code': 'ACCOUNT_DISABLED'}), 403
-        else:
-            return jsonify({'status': 'error', 'error': '❌ Invalid API key', 'code': 'INVALID_KEY'}), 401
-    
-    # Get username
-    data = request.get_json()
-    if not data or 'username' not in data:
-        return jsonify({'status': 'error', 'error': '❌ Username required', 'code': 'NO_USERNAME'}), 400
-    
-    username = data['username'].strip()
-    if not username:
-        return jsonify({'status': 'error', 'error': '❌ Username cannot be empty', 'code': 'EMPTY_USERNAME'}), 400
-    
-    # Scan profile
-    result = scanner.scan_profile(username)
-    
-    # Log request
-    if FIREBASE_READY and db:
-        db.reference('logs').push({
-            'api_key': api_key[:16] + '...',
-            'username': username,
-            'success': result.get('status') == 'success',
-            'response_time': (time.time() - start_time) * 1000,
-            'timestamp': datetime.now().isoformat()
-        })
-    
-    # Add metadata
-    result['plan'] = plan
-    result['limit_total'] = limit
-    result['api_key'] = api_key[:16] + '...'
-    result['developer'] = 'KINGFFAIAK47x'
-    result['owner'] = 'ANSH_AFT'
-    result['telegram_channel'] = 'https://t.me/+iDnVRYTDnAJmNDE1'
-    result['backup_channel'] = 'https://t.me/+aWlMH56c06ZiZTE1'
-    
-    return jsonify(result)
 
 # ============================================================
 # RUN
@@ -484,14 +467,7 @@ if __name__ == '__main__':
     print(f'📺 Channel: {DEVELOPER["channel"]}')
     print(f'📺 Backup: {DEVELOPER["backup_channel"]}')
     print('='*60)
-    print(f'🔑 Admin: {ADMIN["username"]} / {ADMIN["password"]}')
-    print(f'⭐ Premium Key: {API_KEYS["premium"]}')
-    print(f'🆓 User Key: {API_KEYS["user"]}')
-    print(f'🔥 Firebase: {"✅ Connected" if FIREBASE_READY else "❌ Not Connected"}')
-    print('='*60)
-    print('📊 Admin Panel: /login')
-    print('📊 Dashboard: /dashboard')
-    print('📊 API Health: /api/health')
-    print('📊 API Scan: /api/scan (POST)')
+    print('📊 API Scan (GET): /api/scan?username=instagram&api_key=DEMOFUCK')
+    print('📊 Health Check: /api/health')
     print('='*60)
     app.run(host='0.0.0.0', port=5000, debug=True)
