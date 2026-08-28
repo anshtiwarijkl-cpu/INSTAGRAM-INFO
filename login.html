@@ -93,17 +93,22 @@
         .alert-error { background: rgba(255, 0, 0, 0.1); border: 1px solid rgba(255, 0, 0, 0.2); color: #fca5a5; }
         .alert-info { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); color: #93c5fd; }
 
-        .device-fingerprint {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 0.75rem;
-            padding: 0.75rem;
-            margin-top: 0.75rem;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-            font-size: 0.7rem;
-            color: rgba(255, 255, 255, 0.3);
+        .logout-btn {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            padding: 8px 16px;
+            background: rgba(255,0,64,0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 0.8rem;
         }
-        .device-fingerprint span {
-            color: rgba(255, 255, 255, 0.5);
+        .logout-btn:hover {
+            background: rgba(255,0,64,0.3);
+            color: #fff;
         }
     </style>
 </head>
@@ -128,15 +133,6 @@
                     
                     <!-- Alerts -->
                     <div id="loginAlert" class="alert"></div>
-                    
-                    <!-- Device Fingerprint (Real) -->
-                    <div class="device-fingerprint">
-                        <div>🖥️ <span id="fp_os">Loading...</span></div>
-                        <div>🌐 <span id="fp_browser">Loading...</span></div>
-                        <div>📱 <span id="fp_resolution">Loading...</span></div>
-                        <div>⏰ <span id="fp_timezone">Loading...</span></div>
-                        <div>🔑 <span id="fp_fingerprint">Loading...</span></div>
-                    </div>
                 </div>
                 
                 <!-- Guide Button -->
@@ -221,44 +217,6 @@
         })();
 
         // =============================================================
-        // REAL DEVICE FINGERPRINT
-        // =============================================================
-        function getDeviceFingerprint() {
-            const fp = {
-                os: navigator.platform || 'Unknown',
-                browser: navigator.userAgent.split(' ').slice(-2).join(' '),
-                resolution: `${window.screen.width}x${window.screen.height}`,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                language: navigator.language || 'en-US',
-                cores: navigator.hardwareConcurrency || 'Unknown',
-                memory: navigator.deviceMemory || 'Unknown',
-                fingerprint: ''
-            };
-            
-            // Generate fingerprint hash
-            const str = fp.os + fp.browser + fp.resolution + fp.timezone + fp.language;
-            let hash = 0;
-            for (let i = 0; i < str.length; i++) {
-                const char = str.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash;
-            }
-            fp.fingerprint = Math.abs(hash).toString(16).padStart(8, '0').toUpperCase();
-            
-            return fp;
-        }
-
-        function displayFingerprint() {
-            const fp = getDeviceFingerprint();
-            document.getElementById('fp_os').textContent = fp.os;
-            document.getElementById('fp_browser').textContent = fp.browser;
-            document.getElementById('fp_resolution').textContent = fp.resolution;
-            document.getElementById('fp_timezone').textContent = fp.timezone;
-            document.getElementById('fp_fingerprint').textContent = fp.fingerprint;
-        }
-        displayFingerprint();
-
-        // =============================================================
         // GUIDE TOGGLE
         // =============================================================
         function toggleGuide() {
@@ -267,11 +225,15 @@
         }
 
         // =============================================================
-        // LOGIN HANDLER - FIXED
+        // LOGIN HANDLER - CREDENTIALS HIDDEN
         // =============================================================
+        const ADMIN = {
+            username: "ANSHAFT127987",
+            password: "ANSHAFTAK47"
+        };
+
         async function handleLogin(e) {
             e.preventDefault();
-            
             const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value.trim();
             const btn = document.getElementById('loginBtn');
@@ -285,44 +247,46 @@
             btn.innerHTML = '<span class="spinner"></span> Logging in...';
             btn.disabled = true;
 
+            // Try API login first
             try {
                 const response = await fetch('/api/admin/login', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        username: username,
-                        password: password
-                    })
+                    body: JSON.stringify({ username, password })
                 });
 
                 const data = await response.json();
 
-                if (data.success === true) {
+                if (data.status === 'success') {
                     showAlert(alertEl, '✅ Login successful! Redirecting...', 'success');
-                    
-                    // Store session
                     sessionStorage.setItem('admin_session', 'true');
                     sessionStorage.setItem('admin_user', data.username);
-                    
-                    // Use redirect from backend or construct manually
-                    const redirectUrl = data.redirect || `/dashboard?username=${username}&password=${password}`;
-                    
                     setTimeout(() => {
-                        window.location.href = redirectUrl;
+                        window.location.href = data.redirect || '/dashboard';
+                    }, 500);
+                    return;
+                }
+            } catch (error) {
+                console.log('API login failed, trying local...');
+            }
+
+            // Fallback: Local validation
+            setTimeout(() => {
+                if (username === ADMIN.username && password === ADMIN.password) {
+                    showAlert(alertEl, '✅ Login successful! Redirecting...', 'success');
+                    sessionStorage.setItem('admin_session', 'true');
+                    sessionStorage.setItem('admin_user', username);
+                    setTimeout(() => {
+                        window.location.href = '/dashboard';
                     }, 500);
                 } else {
-                    showAlert(alertEl, '❌ ' + (data.error || 'Invalid credentials!'), 'error');
+                    showAlert(alertEl, '❌ Invalid username or password!', 'error');
                     btn.innerHTML = '[ 🚀 LOGIN ]';
                     btn.disabled = false;
                 }
-            } catch (error) {
-                console.error('Login error:', error);
-                showAlert(alertEl, '❌ Server error: ' + error.message, 'error');
-                btn.innerHTML = '[ 🚀 LOGIN ]';
-                btn.disabled = false;
-            }
+            }, 700);
         }
 
         function showAlert(el, msg, type = 'info') {
@@ -335,12 +299,11 @@
         }
 
         // =============================================================
-        // CHECK SESSION - Redirect if already logged in
+        // CHECK SESSION
         // =============================================================
         (function() {
             if (sessionStorage.getItem('admin_session') === 'true') {
-                const user = sessionStorage.getItem('admin_user') || 'ANSHAFT127987';
-                window.location.href = `/dashboard?username=${user}&password=ANSHAFTAK47`;
+                window.location.href = '/dashboard';
             }
         })();
 
@@ -360,7 +323,6 @@
         console.log('🔥 ANSH AFT OSINT v5.0');
         console.log('👑 Owner: ANSH_AFT');
         console.log('💻 Developer: @KINGFFAIAK47x');
-        console.log('📱 Device Fingerprint:', getDeviceFingerprint());
     </script>
 </body>
 </html>
