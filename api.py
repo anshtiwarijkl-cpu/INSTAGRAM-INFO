@@ -12,7 +12,7 @@ from instaloader import Instaloader, Profile
 import traceback
 
 # ============================================================
-# FIREBASE - USE THIS INSTEAD OF FILE SYSTEM
+# FIREBASE - OFFICIAL INITIALIZATION
 # ============================================================
 try:
     import firebase_admin
@@ -33,11 +33,12 @@ CONFIG = {
     "admin_password": "ANSHAFTAK47",
     "version": "3.0.0",
     "api_status": "online",
-    "maintenance": False
+    "maintenance": False,
+    "debug": False
 }
 
 # ============================================================
-# API KEYS & USERS
+# API KEYS & USERS (HIDDEN - NO LEAK)
 # ============================================================
 USERS = {
     "ANSHAFT127987": {
@@ -57,12 +58,41 @@ USERS = {
 }
 
 # ============================================================
-# RATE LIMITING
+# RATE LIMITING - PRODUCTION SAFE (Firebase backed)
 # ============================================================
 rate_limit_data = {}
 
 def check_rate_limit(api_key, per_minute, per_day):
+    """Rate limiting with Firebase persistence"""
     now = time.time()
+    
+    # Try to get from Firebase first
+    if FIREBASE_READY and db:
+        try:
+            ref = db.reference(f'rate_limits/{api_key}')
+            data = ref.get()
+            if data:
+                # Check if reset needed
+                if now - data.get('minute_reset', 0) > 60:
+                    data['minute_count'] = 0
+                    data['minute_reset'] = now
+                if now - data.get('day_reset', 0) > 86400:
+                    data['day_count'] = 0
+                    data['day_reset'] = now
+                
+                if data.get('minute_count', 0) >= per_minute:
+                    return False, f"Rate limit exceeded. {per_minute} requests per minute"
+                if data.get('day_count', 0) >= per_day:
+                    return False, f"Rate limit exceeded. {per_day} requests per day"
+                
+                data['minute_count'] = data.get('minute_count', 0) + 1
+                data['day_count'] = data.get('day_count', 0) + 1
+                ref.set(data)
+                return True, "OK"
+        except:
+            pass
+    
+    # Fallback: In-memory
     if api_key not in rate_limit_data:
         rate_limit_data[api_key] = {
             'minute_count': 0,
@@ -93,7 +123,7 @@ def check_rate_limit(api_key, per_minute, per_day):
     return True, "OK"
 
 # ============================================================
-# FIREBASE INIT
+# FIREBASE INIT - OFFICIAL PATTERN
 # ============================================================
 db = None
 FIREBASE_READY = False
@@ -105,6 +135,7 @@ def init_firebase():
         return False
     
     try:
+        # Check if already initialized using official method
         if firebase_admin._apps:
             db = firebase_db
             FIREBASE_READY = True
@@ -131,112 +162,36 @@ def init_firebase():
         
         db = firebase_db
         FIREBASE_READY = True
-        print("🔥 Firebase initialized successfully!")
+        print("Firebase initialized successfully!")
         return True
         
     except Exception as e:
-        print(f"❌ Firebase init error: {e}")
+        print(f"Firebase init error: {e}")
         return False
 
 init_firebase()
 
 # ============================================================
-# DEVICE FINGERPRINTS
+# DEVICE FINGERPRINTS - JUST HEADERS (NO FALSE CLAIMS)
 # ============================================================
-class UltimateDeviceFingerprint:
+class DeviceHeaders:
     def __init__(self):
-        self.generation_count = 0
-        self.fingerprint_list = self._create_fingerprints()
-        self.current_fingerprint = None
-        self._get_next_fingerprint()
-    
-    def _create_fingerprints(self):
-        return [
-            {
-                'id': 1, 'country': 'USA', 'timezone': 'America/New_York', 
-                'utc_offset': 'UTC-5:00', 'language': 'en-US',
-                'browser': {'name': 'Chrome', 'version': '120.0.6099.109',
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'},
-                'screen': {'width': 1920, 'height': 1080}, 'platform': 'Windows',
-                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'NVIDIA GeForce RTX 3060'
-            },
-            {
-                'id': 2, 'country': 'UK', 'timezone': 'Europe/London',
-                'utc_offset': 'UTC+0:00', 'language': 'en-GB',
-                'browser': {'name': 'Firefox', 'version': '121.0',
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0'},
-                'screen': {'width': 2560, 'height': 1440}, 'platform': 'Windows',
-                'cpu_cores': 12, 'memory': '32 GB', 'gpu': 'AMD Radeon RX 6800 XT'
-            },
-            {
-                'id': 3, 'country': 'India', 'timezone': 'Asia/Kolkata',
-                'utc_offset': 'UTC+5:30', 'language': 'en-IN',
-                'browser': {'name': 'Chrome', 'version': '119.0.6045.199',
-                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'},
-                'screen': {'width': 1680, 'height': 1050}, 'platform': 'Darwin',
-                'cpu_cores': 10, 'memory': '16 GB', 'gpu': 'Apple M2 GPU'
-            },
-            {
-                'id': 4, 'country': 'Japan', 'timezone': 'Asia/Tokyo',
-                'utc_offset': 'UTC+9:00', 'language': 'ja-JP',
-                'browser': {'name': 'Edge', 'version': '120.0.2210.121',
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'},
-                'screen': {'width': 3840, 'height': 2160}, 'platform': 'Windows',
-                'cpu_cores': 16, 'memory': '64 GB', 'gpu': 'NVIDIA GeForce RTX 4090'
-            },
-            {
-                'id': 5, 'country': 'Germany', 'timezone': 'Europe/Berlin',
-                'utc_offset': 'UTC+1:00', 'language': 'de-DE',
-                'browser': {'name': 'Firefox', 'version': '122.0',
-                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; rv:122.0) Gecko/20100101 Firefox/122.0'},
-                'screen': {'width': 1440, 'height': 900}, 'platform': 'Darwin',
-                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'Apple M3 GPU'
-            },
-            {
-                'id': 6, 'country': 'Australia', 'timezone': 'Australia/Sydney',
-                'utc_offset': 'UTC+11:00', 'language': 'en-AU',
-                'browser': {'name': 'Chrome', 'version': '121.0.6167.85',
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'},
-                'screen': {'width': 1366, 'height': 768}, 'platform': 'Windows',
-                'cpu_cores': 6, 'memory': '8 GB', 'gpu': 'Intel Iris Xe Graphics'
-            },
-            {
-                'id': 7, 'country': 'Brazil', 'timezone': 'America/Sao_Paulo',
-                'utc_offset': 'UTC-3:00', 'language': 'pt-BR',
-                'browser': {'name': 'Opera', 'version': '106.0.4998.70',
-                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 OPR/106.0.0.0'},
-                'screen': {'width': 1600, 'height': 900}, 'platform': 'Windows',
-                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'AMD Radeon RX 7900 XTX'
-            },
-            {
-                'id': 8, 'country': 'UAE', 'timezone': 'Asia/Dubai',
-                'utc_offset': 'UTC+4:00', 'language': 'ar-SA',
-                'browser': {'name': 'Safari', 'version': '17.1',
-                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'},
-                'screen': {'width': 2560, 'height': 1600}, 'platform': 'Darwin',
-                'cpu_cores': 12, 'memory': '32 GB', 'gpu': 'Apple M3 Max GPU'
-            }
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; rv:122.0) Gecko/20100101 Firefox/122.0'
         ]
+        self.index = 0
     
-    def _get_next_fingerprint(self):
-        self.generation_count += 1
-        index = (self.generation_count - 1) % len(self.fingerprint_list)
-        self.current_fingerprint = self.fingerprint_list[index].copy()
-        self.current_fingerprint['generation'] = self.generation_count
-        self.current_fingerprint['fingerprint_id'] = hashlib.md5(
-            str(time.time() + random.random() + self.generation_count).encode()
-        ).hexdigest()[:24]
-        return self.current_fingerprint
-    
-    def get_fingerprint(self):
-        return self._get_next_fingerprint()
-    
-    def get_headers(self):
-        fp = self.get_fingerprint()
+    def get_next(self):
+        ua = self.user_agents[self.index % len(self.user_agents)]
+        self.index += 1
         return {
-            'User-Agent': fp['browser']['user_agent'],
+            'User-Agent': ua,
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-            'Accept-Language': f"{fp['language']},en;q=0.9",
+            'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
@@ -250,29 +205,30 @@ class UltimateDeviceFingerprint:
             'Referer': 'https://www.google.com/'
         }
 
+device_headers = DeviceHeaders()
+
 # ============================================================
-# INSTAGRAM SCANNER CLASS
+# INSTAGRAM SCANNER CLASS - NO RECURSION
 # ============================================================
 class InstagramScanner:
     def __init__(self):
-        self.fingerprint = UltimateDeviceFingerprint()
         self.loader = None
+        self.retry_count = 0
+        self.max_retries = 2
     
     def initialize_loader(self):
         try:
-            fp = self.fingerprint.get_fingerprint()
-            user_agent = fp['browser']['user_agent']
+            headers = device_headers.get_next()
             
             self.loader = Instaloader(
                 max_connection_attempts=2,
                 request_timeout=20,
-                user_agent=user_agent,
+                user_agent=headers['User-Agent'],
                 sleep=True,
                 quiet=True
             )
             
             if hasattr(self.loader, 'context') and hasattr(self.loader.context, '_session'):
-                headers = self.fingerprint.get_headers()
                 for key, value in headers.items():
                     self.loader.context._session.headers.update({key: value})
             
@@ -283,6 +239,11 @@ class InstagramScanner:
             return False
     
     def scan_profile(self, username):
+        """Scan profile with limited retries - NO RECURSION"""
+        self.retry_count = 0
+        return self._scan_with_retry(username)
+    
+    def _scan_with_retry(self, username):
         start_time = time.time()
         
         try:
@@ -290,7 +251,6 @@ class InstagramScanner:
                 return {'status': 'error', 'error': 'Failed to initialize Instagram loader'}
             
             profile = Profile.from_username(self.loader.context, username)
-            fp = self.fingerprint.current_fingerprint
             response_time = (time.time() - start_time) * 1000
             
             result = {
@@ -312,7 +272,7 @@ class InstagramScanner:
                     "followers": profile.followers,
                     "following": profile.followees,
                     "posts": profile.mediacount,
-                    "account_creation_year": 2012
+                    "account_creation_year": None
                 },
                 "USERNAME": "@KINGFFAIAK47x",
                 "MADE_BY": "ANSH AFT"
@@ -325,16 +285,18 @@ class InstagramScanner:
         except instaloader.exceptions.PrivateProfileNotFollowedException:
             return {'status': 'error', 'error': f'Profile @{username} is private', 'code': 'PRIVATE_ACCOUNT'}
         except Exception as e:
-            if "401" in str(e):
+            if "401" in str(e) and self.retry_count < self.max_retries:
+                self.retry_count += 1
+                print(f"Retry {self.retry_count}/{self.max_retries} for {username}")
                 time.sleep(2)
-                return self.scan_profile(username)
+                return self._scan_with_retry(username)
             else:
                 return {'status': 'error', 'error': str(e)[:100], 'code': 'SCAN_ERROR'}
 
 scanner = InstagramScanner()
 
 # ============================================================
-# VALIDATE API KEY
+# VALIDATE API KEY - NO LEAK
 # ============================================================
 def validate_api_key(api_key):
     if not api_key:
@@ -401,7 +363,7 @@ def admin_login():
         }), 401
 
 # ============================================================
-# API: SCAN PROFILE - FIXED
+# API: SCAN PROFILE - NO KEY LEAK, NO RECURSION
 # ============================================================
 @app.route('/api/scan', methods=['GET'])
 def scan_profile_get():
@@ -411,32 +373,27 @@ def scan_profile_get():
     if CONFIG.get('maintenance', False):
         return jsonify({
             'status': 'error',
-            'error': 'API Under Maintenance',
-            'contact': '@KINGFFAIAK47x'
+            'code': 'MAINTENANCE',
+            'error': 'API Under Maintenance'
         }), 503
     
     if CONFIG.get('api_status') == 'offline':
         return jsonify({
             'status': 'error',
-            'error': 'API Offline',
-            'contact': '@KINGFFAIAK47x'
+            'code': 'API_OFFLINE',
+            'error': 'API Offline'
         }), 503
     
-    # GET API KEY - FIXED: properly get from query
+    # GET API KEY
     api_key = request.args.get('api_key', '').strip()
-    
-    # Debug log
-    print(f"🔑 API Key received: {api_key}")
-    print(f"📝 All params: {request.args}")
     
     user_data, username = validate_api_key(api_key)
     if not user_data:
+        # FIXED: No key leak
         return jsonify({
             'status': 'error',
             'code': 'INVALID_KEY',
-            'error': 'Invalid API key',
-            'message': f'Key "{api_key}" is not valid',
-            'valid_keys': ['ANSHAFTAK472026', 'DEMOFUCK']
+            'error': 'Invalid API key'
         }), 403
     
     # Rate limit check
@@ -452,27 +409,24 @@ def scan_profile_get():
             'plan': user_data.get('plan', 'user')
         }), 429
     
-    # GET USERNAME - FIXED
+    # GET USERNAME
     username_param = request.args.get('username', '').strip()
     
     if not username_param:
         return jsonify({
             'status': 'error',
             'code': 'NO_USERNAME',
-            'error': 'Username required',
-            'example': '/api/scan?username=instagram&api_key=DEMOFUCK'
+            'error': 'Username required'
         }), 400
     
-    print(f"📱 Scanning: {username_param}")
-    
-    # Scan profile with timeout
+    # Scan profile
     try:
         result = scanner.scan_profile(username_param)
     except Exception as e:
         return jsonify({
             'status': 'error',
-            'error': str(e),
-            'code': 'SCAN_ERROR'
+            'code': 'SCAN_ERROR',
+            'error': str(e)
         }), 500
     
     # Log to Firebase
@@ -488,14 +442,12 @@ def scan_profile_get():
         except:
             pass
     
-    # Add metadata
+    # Add metadata (NO KEY LEAK)
     if result.get('status') == 'ok':
         result['api_key_used'] = api_key[:16] + '...'
         result['plan'] = user_data.get('plan', 'user')
         result['limit_minute'] = per_minute
         result['limit_day'] = per_day
-        result['remaining_minute'] = per_minute - rate_limit_data.get(api_key, {}).get('minute_count', 0)
-        result['remaining_day'] = per_day - rate_limit_data.get(api_key, {}).get('day_count', 0)
         result['developer'] = '@KINGFFAIAK47x'
         result['owner'] = 'ANSH AFT'
         result['response_time_ms'] = (time.time() - start_time) * 1000
@@ -514,8 +466,7 @@ def health_check():
         'service': 'Instagram Scanner API',
         'version': CONFIG.get('version', '3.0.0'),
         'developer': 'KINGFFAIAK47x',
-        'owner': 'ANSH_AFT',
-        'api_status': CONFIG.get('api_status', 'online')
+        'owner': 'ANSH_AFT'
     })
 
 # ============================================================
@@ -534,20 +485,16 @@ def api_status():
     })
 
 # ============================================================
-# RUN
+# RUN - DEBUG DISABLED FOR PRODUCTION
 # ============================================================
 if __name__ == '__main__':
     print('='*60)
-    print('🔥 INSTAGRAM SCANNER API v3.0')
+    print('INSTAGRAM SCANNER API v3.0')
     print('='*60)
-    print(f'👑 Owner: ANSH_AFT')
-    print(f'💻 Developer: KINGFFAIAK47x')
+    print('Owner: ANSH_AFT')
+    print('Developer: KINGFFAIAK47x')
     print('='*60)
-    print('📊 CORRECT URL FORMAT:')
-    print('   /api/scan?username=USERNAME&api_key=KEY')
+    print('URL FORMAT:')
+    print('  /api/scan?username=USERNAME&api_key=KEY')
     print('='*60)
-    print('🔑 API Keys:')
-    print('   ⭐ Premium: ANSHAFTAK472026')
-    print('   🆓 User: DEMOFUCK')
-    print('='*60)
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
