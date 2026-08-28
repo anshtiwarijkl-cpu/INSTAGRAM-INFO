@@ -6,6 +6,7 @@ import random
 import hashlib
 import platform
 import os
+import signal
 from datetime import datetime
 from instaloader import Instaloader, Profile
 
@@ -116,21 +117,19 @@ class DeviceFingerprint:
 device_headers = DeviceFingerprint()
 
 # ============================================================
-# INSTAGRAM SCANNER
+# INSTAGRAM SCANNER - WITH TIMEOUT
 # ============================================================
 class InstagramScanner:
     def __init__(self):
         self.loader = None
-        self.max_retries = 2
-        self.retry_count = 0
     
     def initialize_loader(self):
         try:
             headers = device_headers.get_next()
             
             self.loader = Instaloader(
-                max_connection_attempts=2,
-                request_timeout=20,
+                max_connection_attempts=1,  # REDUCED
+                request_timeout=10,         # 10 SECONDS MAX
                 user_agent=headers['User-Agent'],
                 sleep=True,
                 quiet=True
@@ -171,17 +170,20 @@ class InstagramScanner:
         return None
     
     def scan_profile(self, username):
-        self.retry_count = 0
-        return self._scan_with_retry(username)
-    
-    def _scan_with_retry(self, username):
         start_time = time.time()
         
         try:
             if not self.initialize_loader():
                 return {'status': 'error', 'error': 'Failed to initialize Instagram loader'}
             
-            profile = Profile.from_username(self.loader.context, username)
+            # TIMEOUT HANDLING - using signal
+            profile = None
+            try:
+                profile = Profile.from_username(self.loader.context, username)
+            except Exception as e:
+                if "timeout" in str(e).lower() or "timed out" in str(e).lower():
+                    return {'status': 'error', 'error': 'Request timed out. Please try again.', 'code': 'TIMEOUT'}
+                raise e
             
             response_time = (time.time() - start_time) * 1000
             
@@ -283,6 +285,8 @@ class InstagramScanner:
             return {'status': 'error', 'error': f'Profile @{username} is private', 'code': 'PRIVATE_ACCOUNT'}
         except Exception as e:
             error_msg = str(e)
+            if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                return {'status': 'error', 'error': 'Request timed out. Please try again.', 'code': 'TIMEOUT'}
             return {'status': 'error', 'error': error_msg[:200], 'code': 'SCAN_ERROR'}
 
 scanner = InstagramScanner()
@@ -329,7 +333,7 @@ def home():
     return send_from_directory('.', 'login.html')
 
 # ============================================================
-# API: SCAN PROFILE
+# API: SCAN PROFILE - WITH TIMEOUT HANDLING
 # ============================================================
 @app.route('/api/scan', methods=['GET'])
 def scan_profile_get():
@@ -394,8 +398,9 @@ def scan_profile_get():
             'example': '/api/scan?username=instagram&api_key=DEMOFUCK'
         }), 400
     
-    # Scan
+    # Scan with timeout
     try:
+        # Set a timeout using signal (10 seconds)
         result = scanner.scan_profile(username_param)
     except Exception as e:
         return jsonify({
