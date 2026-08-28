@@ -1,721 +1,555 @@
-const express = require('express');
-const app = express();
-const fs = require('fs');
-const path = require('path');
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
+from flask_cors import CORS
+import instaloader
+import time
+import random
+import hashlib
+import json
+import os
+import secrets
+from datetime import datetime
+from instaloader import Instaloader, Profile
+import traceback
 
-// ========== CORS ==========
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, x-api-key');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
-  next();
-});
+# ============================================================
+# FIREBASE - USE THIS INSTEAD OF FILE SYSTEM
+# ============================================================
+try:
+    import firebase_admin
+    from firebase_admin import credentials, db as firebase_db
+    FIREBASE_AVAILABLE = True
+except ImportError:
+    FIREBASE_AVAILABLE = False
+    print("⚠️ Firebase not installed")
 
-// ========== MIDDLEWARE ==========
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.static('.'));
+app = Flask(__name__, static_folder='.')
+CORS(app)
 
-// ============================================================
-// CONFIGURATION
-// ============================================================
-let CONFIG = {
-  adminUsername: 'ANSHAFT127987',
-  adminPassword: 'ANSHAFTAK47',
-  rateLimit: {
-    user: { perMinute: 100, perDay: 1000 },
-    owner: { perMinute: 10000, perDay: 100000 },
-    free: { perMinute: 10, perDay: 100 }
-  },
-  apiStatus: 'online',
-  version: '3.0.0',
-  theme: {
-    background: '#0a0a0a',
-    color: '#00ff41',
-    glowColor: '#00ff41'
-  },
-  maintenance: false,
-  logsEnabled: true
-};
-
-// ============================================================
-// DATA STORAGE
-// ============================================================
-let users = {
-  'ANSHAFT127987': {
-    apiKey: 'ANSHAFTAK472026',
-    plan: 'owner',
-    minuteRequests: 0,
-    dayRequests: 0,
-    lastMinuteReset: Date.now(),
-    lastDayReset: Date.now(),
-    createdAt: Date.now(),
-    status: 'active'
-  },
-  'DEMO_USER': {
-    apiKey: 'DEMOFUCK',
-    plan: 'user',
-    minuteRequests: 0,
-    dayRequests: 0,
-    lastMinuteReset: Date.now(),
-    lastDayReset: Date.now(),
-    createdAt: Date.now(),
-    status: 'active'
-  }
-};
-
-let usageLogs = [];
-let systemStats = { totalRequests: 0, startTime: Date.now() };
-let failedLogins = [];
-let announcements = [];
-
-// ============================================================
-// SAVE/L OAD DATA (PERSISTENCE)
-// ============================================================
-const DATA_FILE = path.join(__dirname, 'data.json');
-
-function saveData() {
-  try {
-    const data = {
-      users,
-      usageLogs: usageLogs.slice(-500),
-      systemStats,
-      failedLogins: failedLogins.slice(-100),
-      announcements,
-      CONFIG
-    };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
-  } catch (e) {
-    console.log('⚠️ Save error:', e.message);
-  }
+# ============================================================
+# CONFIGURATION
+# ============================================================
+CONFIG = {
+    "admin_username": "ANSHAFT127987",
+    "admin_password": "ANSHAFTAK47",
+    "version": "3.0.0",
+    "api_status": "online",
+    "maintenance": False
 }
 
-function loadData() {
-  try {
-    if (fs.existsSync(DATA_FILE)) {
-      const raw = fs.readFileSync(DATA_FILE, 'utf8');
-      const data = JSON.parse(raw);
-      users = data.users || users;
-      usageLogs = data.usageLogs || [];
-      systemStats = data.systemStats || { totalRequests: 0, startTime: Date.now() };
-      failedLogins = data.failedLogins || [];
-      announcements = data.announcements || [];
-      CONFIG = data.CONFIG || CONFIG;
-      console.log('✅ Data loaded successfully');
+# ============================================================
+# API KEYS & USERS
+# ============================================================
+USERS = {
+    "ANSHAFT127987": {
+        "api_key": "ANSHAFTAK472026",
+        "plan": "owner",
+        "status": "active",
+        "per_minute": 10000,
+        "per_day": 100000
+    },
+    "DEMO_USER": {
+        "api_key": "DEMOFUCK",
+        "plan": "user",
+        "status": "active",
+        "per_minute": 100,
+        "per_day": 1000
     }
-  } catch (e) {
-    console.log('⚠️ Load error:', e.message);
-  }
 }
 
-// Load data on startup
-loadData();
+# ============================================================
+# RATE LIMITING (IN-MEMORY)
+# ============================================================
+rate_limit_data = {}
 
-// Auto-save every 30 seconds
-setInterval(saveData, 30000);
-
-// ============================================================
-// RATE LIMIT CHECK
-// ============================================================
-function checkAndResetLimits(user) {
-  const now = Date.now();
-  const oneMinute = 60000;
-  const oneDay = 86400000;
-  
-  if (now - user.lastMinuteReset > oneMinute) {
-    user.minuteRequests = 0;
-    user.lastMinuteReset = now;
-  }
-  
-  if (now - user.lastDayReset > oneDay) {
-    user.dayRequests = 0;
-    user.lastDayReset = now;
-  }
-}
-
-// ============================================================
-// VALIDATE API KEY
-// ============================================================
-function validateApiKey(req, res, next) {
-  if (CONFIG.maintenance) {
-    return res.status(503).json({
-      error: 'API Under Maintenance',
-      message: 'We are currently upgrading our systems.',
-      contact: '@KINGFFAIAK47x'
-    });
-  }
-  
-  if (CONFIG.apiStatus === 'offline') {
-    return res.status(503).json({
-      error: 'API Offline',
-      message: 'API is currently disabled.',
-      contact: '@KINGFFAIAK47x'
-    });
-  }
-
-  const apiKey = req.query.api_key || req.headers['x-api-key'];
-  
-  if (!apiKey) {
-    return res.status(401).json({
-      error: 'API Key Required',
-      message: 'Please provide api_key parameter',
-      get_key: 'Contact @KINGFFAIAK47x'
-    });
-  }
-
-  let user = null;
-  let username = null;
-  for (const [key, value] of Object.entries(users)) {
-    if (value.apiKey === apiKey) {
-      user = value;
-      username = key;
-      break;
-    }
-  }
-
-  if (!user) {
-    return res.status(403).json({
-      error: 'Invalid API Key',
-      message: 'The API key provided is not valid',
-      support: 'https://t.me/KINGFFAIAK47x'
-    });
-  }
-
-  if (user.status === 'suspended') {
-    return res.status(403).json({
-      error: 'Account Suspended',
-      message: 'Your account has been suspended.',
-      support: 'https://t.me/KINGFFAIAK47x'
-    });
-  }
-
-  checkAndResetLimits(user);
-
-  let limits;
-  if (user.plan === 'owner') {
-    limits = CONFIG.rateLimit.owner;
-  } else if (user.plan === 'user') {
-    limits = CONFIG.rateLimit.user;
-  } else {
-    limits = CONFIG.rateLimit.free;
-  }
-
-  if (user.minuteRequests >= limits.perMinute) {
-    return res.status(429).json({
-      error: 'Rate Limit Exceeded (Minute)',
-      message: 'You have exceeded ' + limits.perMinute + ' requests per minute',
-      plan: user.plan,
-      reset_in: Math.ceil((user.lastMinuteReset + 60000 - Date.now()) / 1000) + ' seconds'
-    });
-  }
-
-  if (user.dayRequests >= limits.perDay) {
-    return res.status(429).json({
-      error: 'Rate Limit Exceeded (Daily)',
-      message: 'You have exceeded ' + limits.perDay + ' requests per day',
-      plan: user.plan,
-      reset_at: new Date(user.lastDayReset + 86400000).toISOString()
-    });
-  }
-
-  user.minuteRequests++;
-  user.dayRequests++;
-  systemStats.totalRequests++;
-  
-  if (CONFIG.logsEnabled) {
-    usageLogs.push({
-      username: username,
-      apiKey: apiKey.substring(0, 8) + '...',
-      timestamp: new Date().toISOString(),
-      ip: req.ip || req.headers['x-forwarded-for'] || 'self',
-      plan: user.plan
-    });
-    if (usageLogs.length > 1000) {
-      usageLogs = usageLogs.slice(-500);
-    }
-  }
-
-  req.user = { username: username, ...user };
-  next();
-}
-
-// ============================================================
-// INSTAGRAM SCANNER (SIMULATED - REAL DATA)
-// ============================================================
-async function scanInstagram(username) {
-  try {
-    // Using fetch to get real Instagram data
-    const response = await fetch(`https://www.instagram.com/${username}/?__a=1&__d=1`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-      }
-    });
-
-    if (!response.ok) {
-      return {
-        status: 'error',
-        error: `Profile @${username} does not exist or is private`,
-        code: 'INVALID_USER'
-      };
-    }
-
-    const data = await response.json();
-    const userData = data.graphql?.user || data.user;
-
-    if (!userData) {
-      return {
-        status: 'error',
-        error: `Profile @${username} not found`,
-        code: 'INVALID_USER'
-      };
-    }
-
-    return {
-      status: 'ok',
-      collected_at: new Date().toISOString(),
-      profile: {
-        id: userData.id,
-        username: userData.username,
-        full_name: userData.full_name || 'N/A',
-        biography: userData.biography?.substring(0, 200) || 'No bio available',
-        is_private: userData.is_private || false,
-        is_verified: userData.is_verified || false,
-        is_business_account: userData.is_business_account || false,
-        is_professional_account: userData.is_professional_account || false,
-        category_name: userData.category_name || null,
-        business_category_name: userData.business_category_name || null,
-        profile_pic_url_hd: userData.profile_pic_url_hd || userData.profile_pic_url,
-        external_url: userData.external_url || null,
-        followers: userData.edge_followed_by?.count || 0,
-        following: userData.edge_follow?.count || 0,
-        posts: userData.edge_owner_to_timeline_media?.count || 0,
-        account_creation_year: 2012
-      },
-      USERNAME: '@KINGFFAIAK47x',
-      MADE_BY: 'ANSH AFT'
-    };
-  } catch (error) {
-    console.error('Instagram scan error:', error.message);
-    return {
-      status: 'error',
-      error: error.message || 'Failed to scan profile',
-      code: 'SCAN_ERROR'
-    };
-  }
-}
-
-// ============================================================
-// ROUTES - STATIC FILES
-// ============================================================
-app.get('/login', (req, res) => {
-  res.sendFile(path.join(__dirname, 'login.html'));
-});
-
-app.get('/dashboard', (req, res) => {
-  const { username, password } = req.query;
-  
-  if (username && password) {
-    if (username === CONFIG.adminUsername && password === CONFIG.adminPassword) {
-      return res.sendFile(path.join(__dirname, 'dashboard.html'));
-    } else {
-      return res.redirect('/login?error=Invalid credentials');
-    }
-  }
-  
-  res.redirect('/login?error=Please login first');
-});
-
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'login.html'));
-});
-
-// ============================================================
-// API: SCAN PROFILE
-// ============================================================
-app.get('/api/scan', validateApiKey, async (req, res) => {
-  const startTime = Date.now();
-  const username = req.query.username;
-
-  if (!username) {
-    return res.status(400).json({
-      status: 'error',
-      code: 'NO_USERNAME',
-      error: 'Username required',
-      message: 'Please provide username parameter',
-      example: '/api/scan?username=instagram&api_key=DEMOFUCK',
-      MADE_BY: 'ANSH AFT',
-      USERNAME: '@KINGFFAIAK47x'
-    });
-  }
-
-  try {
-    const result = await scanInstagram(username);
+def check_rate_limit(api_key, per_minute, per_day):
+    now = time.time()
+    if api_key not in rate_limit_data:
+        rate_limit_data[api_key] = {
+            'minute_count': 0,
+            'day_count': 0,
+            'minute_reset': now,
+            'day_reset': now
+        }
     
-    // Add metadata
-    if (result.status === 'ok') {
-      const limits = CONFIG.rateLimit[req.user.plan] || CONFIG.rateLimit.user;
-      result.api_key_used = req.user.apiKey.substring(0, 16) + '...';
-      result.plan = req.user.plan;
-      result.limit_minute = limits.perMinute;
-      result.limit_day = limits.perDay;
-      result.remaining_minute = limits.perMinute - req.user.minuteRequests;
-      result.remaining_day = limits.perDay - req.user.dayRequests;
-      result.response_time = Date.now() - startTime;
-      result.developer = '@KINGFFAIAK47x';
-      result.owner = 'ANSH AFT';
-      result.channel = 'https://t.me/+iDnVRYTDnAJmNDE1';
-    }
+    data = rate_limit_data[api_key]
+    
+    if now - data['minute_reset'] > 60:
+        data['minute_count'] = 0
+        data['minute_reset'] = now
+    
+    if now - data['day_reset'] > 86400:
+        data['day_count'] = 0
+        data['day_reset'] = now
+    
+    if data['minute_count'] >= per_minute:
+        return False, f"Rate limit exceeded. {per_minute} requests per minute"
+    
+    if data['day_count'] >= per_day:
+        return False, f"Rate limit exceeded. {per_day} requests per day"
+    
+    data['minute_count'] += 1
+    data['day_count'] += 1
+    
+    return True, "OK"
 
-    // Save data periodically
-    if (systemStats.totalRequests % 10 === 0) {
-      saveData();
-    }
+# ============================================================
+# FIREBASE INIT
+# ============================================================
+db = None
+FIREBASE_READY = False
 
-    res.json(result);
-  } catch (error) {
-    res.status(500).json({
-      status: 'error',
-      error: error.message,
-      code: 'SERVER_ERROR'
-    });
-  }
-});
+def init_firebase():
+    global db, FIREBASE_READY
+    
+    if not FIREBASE_AVAILABLE:
+        return False
+    
+    try:
+        if firebase_admin._apps:
+            db = firebase_db
+            FIREBASE_READY = True
+            return True
+        
+        cred_dict = {
+            "type": "service_account",
+            "project_id": "ansh-aft",
+            "private_key_id": "54a495a8815a68f488b2e97a627b3768561f9730",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDAdBVfG2zWAgnP\n0LK4OCxjHWGA7Elcojb4//8/KMuuvUUZDZ1xxn6Wm1T1+ILWMvvbVZs4iCPsK9+e\n7mhIsNGWD3EtbIRPXCkpnBRJ7KZ8dm0kIgI1L7WG8NQYY9/hBUJkw9ZptWpg2TaN\nAVWjbfWpqx+O4nieeKd3kzyTl1C5zNaZvde2lVCcHavQvfyfkTDsW5I9XIsnUZsu\n3A+jQFNSFqwfbufxCTSvjI09hYV/GGp8BP7eoLgcx+IXPRJAGfx3jab2wtPMERWs\nLDDcWdXbH9BiZHvG7UiyBSVPopx73zUZ5bO3gzbuWIHeP3s71X9Fo5g/CYvbxfEY\nyNcA7EktAgMBAAECgf9OLtp/yKRuTGWwBxiTvj5KBaWWumcTOtMaVOVcwzX7xuhL\nRTyw+/JxPKlHQ63jVtL6R8zHKodtamVuK2wyG6MJUzynN26Izufp/34+ieUYqwOr\nqiU7diZIq41+WxSYVYqjZOu2Bf0xWwzOO7yOqB0k0GABq/9UYa+m5Cm3y8D/uYLF\nYE38hs40kupIxCDV32AYRg37xKO/qlXyYTn+2aNVtSYbxkq0zwAnwnsyYlBe4J8X\nazlhAWNO6d2G9y7JSEaKooOVPNeqw2NZPtwK+ebu1LRQIP8iaCr+CSuFdZ3srdaA\nIW/1EJf5aXgKKsdYWoonQeqxTyNLDyZx+FD/TgECgYEA7ASDHZUXzamix9vmG1Gk\nR/MOc4ZPu8IyVrgCqs0lJfKiMr/sOPnpvrULH+q08ixiH4waxLqqCE+VmSUPpVhu\n1Th3/lC4G+7gmomdi/HLbBuJRVchEtjsc/d88O6wFPCXEWTxByZSzGwf2HTY65Vq\nhZa5+/9eObeRJsHbFWB7nh0CgYEA0L9aingPQSU9Dibbyat2PL8WmSi3lYHo5+Fl\nRl/DdsOG+dNkKNvMfXO2A5WboDwWT+/Q1bcXQrjDFqFc6JfBJ64TD39Ev3uyzo1O\nIb6nKfjcW+usfm94s770HNp5kugXfld+rFnMmS6D4OpL7mOhaap9IUtrvPdp2lQr\n4bUQqlECgYEAj9IwE9bGqoy0pRVbI0qc0TtLkxpFfCTah/2ZontgJ7+zFzncuNuR\nlKS+IrTjjq99G7xEk50r/+R/RNNQtXEuGMBQXqjRiDQIqiMx3hV54GbnP1nYzaNi\nc0hc2nSY2CnD5NWeCr1Pt0IsJbsOdICYaM9whh8XTBSQXw3Cc0RYEAECgYEAi7Vm\nDYKpAvq/UDdlpiWhbqqdn0gHBoL5tCfANkdldJkMPyvhvw7MX7IPwXphu+47KKji\nZgayBK/PsdexbOIUHlB85URSaK2LUH52KlOFYavzH3ot6jkE2ZgVnTIDZ/T5tE8u\nsn8vVd4x2Vg2FYiMwUGfmab2pnQYXk0zSU57puECgYBdxuwP43Iu3rYXkImm/AtF\nlaUNUDCLxvhZCqMaqfSWcapPrTswCq47fQCEVloRSS6j0i8za1mHqPr6Eum8MHOA\nWEc5Rh6BrHjdlF7TdK8HOJJVc744HgGaXl6s/3Gu9go+iKvm8m1QjOF7pm2VRs5o\ndNo69GveqJ+h1FWs8H5gDw==\n-----END PRIVATE KEY-----\n",
+            "client_email": "firebase-adminsdk-fbsvc@ansh-aft.iam.gserviceaccount.com",
+            "client_id": "116996985410373827841",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40ansh-aft.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
+        }
+        
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': 'https://ansh-aft-default-rtdb.firebaseio.com'
+        })
+        
+        db = firebase_db
+        FIREBASE_READY = True
+        print("🔥 Firebase initialized successfully!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Firebase init error: {e}")
+        return False
 
-// ============================================================
-// API: HEALTH
-// ============================================================
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'running',
-    timestamp: new Date().toISOString(),
-    service: 'Instagram Scanner API',
-    version: CONFIG.version,
-    developer: 'KINGFFAIAK47x',
-    owner: 'ANSH AFT',
-    api_status: CONFIG.apiStatus,
-    uptime: Math.floor((Date.now() - systemStats.startTime) / 1000)
-  });
-});
+init_firebase()
 
-// ============================================================
-// API: STATUS
-// ============================================================
-app.get('/api/status', (req, res) => {
-  res.json({
-    status: CONFIG.apiStatus,
-    version: CONFIG.version,
-    uptime: Math.floor((Date.now() - systemStats.startTime) / 1000),
-    total_requests: systemStats.totalRequests,
-    total_users: Object.keys(users).length,
-    maintenance: CONFIG.maintenance,
-    timestamp: new Date().toISOString(),
-    developer: 'KINGFFAIAK47x',
-    owner: 'ANSH AFT'
-  });
-});
+# ============================================================
+# DEVICE FINGERPRINTS
+# ============================================================
+class UltimateDeviceFingerprint:
+    def __init__(self):
+        self.generation_count = 0
+        self.fingerprint_list = self._create_fingerprints()
+        self.current_fingerprint = None
+        self._get_next_fingerprint()
+    
+    def _create_fingerprints(self):
+        return [
+            {
+                'id': 1, 'country': 'USA', 'timezone': 'America/New_York', 
+                'utc_offset': 'UTC-5:00', 'language': 'en-US',
+                'browser': {'name': 'Chrome', 'version': '120.0.6099.109',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'},
+                'screen': {'width': 1920, 'height': 1080}, 'platform': 'Windows',
+                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'NVIDIA GeForce RTX 3060'
+            },
+            {
+                'id': 2, 'country': 'UK', 'timezone': 'Europe/London',
+                'utc_offset': 'UTC+0:00', 'language': 'en-GB',
+                'browser': {'name': 'Firefox', 'version': '121.0',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0'},
+                'screen': {'width': 2560, 'height': 1440}, 'platform': 'Windows',
+                'cpu_cores': 12, 'memory': '32 GB', 'gpu': 'AMD Radeon RX 6800 XT'
+            },
+            {
+                'id': 3, 'country': 'India', 'timezone': 'Asia/Kolkata',
+                'utc_offset': 'UTC+5:30', 'language': 'en-IN',
+                'browser': {'name': 'Chrome', 'version': '119.0.6045.199',
+                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'},
+                'screen': {'width': 1680, 'height': 1050}, 'platform': 'Darwin',
+                'cpu_cores': 10, 'memory': '16 GB', 'gpu': 'Apple M2 GPU'
+            },
+            {
+                'id': 4, 'country': 'Japan', 'timezone': 'Asia/Tokyo',
+                'utc_offset': 'UTC+9:00', 'language': 'ja-JP',
+                'browser': {'name': 'Edge', 'version': '120.0.2210.121',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0'},
+                'screen': {'width': 3840, 'height': 2160}, 'platform': 'Windows',
+                'cpu_cores': 16, 'memory': '64 GB', 'gpu': 'NVIDIA GeForce RTX 4090'
+            },
+            {
+                'id': 5, 'country': 'Germany', 'timezone': 'Europe/Berlin',
+                'utc_offset': 'UTC+1:00', 'language': 'de-DE',
+                'browser': {'name': 'Firefox', 'version': '122.0',
+                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; rv:122.0) Gecko/20100101 Firefox/122.0'},
+                'screen': {'width': 1440, 'height': 900}, 'platform': 'Darwin',
+                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'Apple M3 GPU'
+            },
+            {
+                'id': 6, 'country': 'Australia', 'timezone': 'Australia/Sydney',
+                'utc_offset': 'UTC+11:00', 'language': 'en-AU',
+                'browser': {'name': 'Chrome', 'version': '121.0.6167.85',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'},
+                'screen': {'width': 1366, 'height': 768}, 'platform': 'Windows',
+                'cpu_cores': 6, 'memory': '8 GB', 'gpu': 'Intel Iris Xe Graphics'
+            },
+            {
+                'id': 7, 'country': 'Brazil', 'timezone': 'America/Sao_Paulo',
+                'utc_offset': 'UTC-3:00', 'language': 'pt-BR',
+                'browser': {'name': 'Opera', 'version': '106.0.4998.70',
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36 OPR/106.0.0.0'},
+                'screen': {'width': 1600, 'height': 900}, 'platform': 'Windows',
+                'cpu_cores': 8, 'memory': '16 GB', 'gpu': 'AMD Radeon RX 7900 XTX'
+            },
+            {
+                'id': 8, 'country': 'UAE', 'timezone': 'Asia/Dubai',
+                'utc_offset': 'UTC+4:00', 'language': 'ar-SA',
+                'browser': {'name': 'Safari', 'version': '17.1',
+                    'user_agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15'},
+                'screen': {'width': 2560, 'height': 1600}, 'platform': 'Darwin',
+                'cpu_cores': 12, 'memory': '32 GB', 'gpu': 'Apple M3 Max GPU'
+            }
+        ]
+    
+    def _get_next_fingerprint(self):
+        self.generation_count += 1
+        index = (self.generation_count - 1) % len(self.fingerprint_list)
+        self.current_fingerprint = self.fingerprint_list[index].copy()
+        self.current_fingerprint['generation'] = self.generation_count
+        self.current_fingerprint['fingerprint_id'] = hashlib.md5(
+            str(time.time() + random.random() + self.generation_count).encode()
+        ).hexdigest()[:24]
+        return self.current_fingerprint
+    
+    def get_fingerprint(self):
+        return self._get_next_fingerprint()
+    
+    def get_headers(self):
+        fp = self.get_fingerprint()
+        return {
+            'User-Agent': fp['browser']['user_agent'],
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': f"{fp['language']},en;q=0.9",
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1',
+            'Sec-GPC': '1',
+            'Referer': 'https://www.google.com/'
+        }
 
-// ============================================================
-// ADMIN API ENDPOINTS
-// ============================================================
+# ============================================================
+# INSTAGRAM SCANNER CLASS
+# ============================================================
+class InstagramScanner:
+    def __init__(self):
+        self.fingerprint = UltimateDeviceFingerprint()
+        self.loader = None
+    
+    def initialize_loader(self):
+        try:
+            fp = self.fingerprint.get_fingerprint()
+            user_agent = fp['browser']['user_agent']
+            
+            self.loader = Instaloader(
+                max_connection_attempts=3,
+                request_timeout=30,
+                user_agent=user_agent,
+                sleep=True,
+                quiet=True
+            )
+            
+            if hasattr(self.loader, 'context') and hasattr(self.loader.context, '_session'):
+                headers = self.fingerprint.get_headers()
+                for key, value in headers.items():
+                    self.loader.context._session.headers.update({key: value})
+            
+            return True
+            
+        except Exception as e:
+            print(f"Loader init error: {e}")
+            return False
+    
+    def scan_profile(self, username):
+        start_time = time.time()
+        
+        try:
+            if not self.initialize_loader():
+                return {'status': 'error', 'error': 'Failed to initialize Instagram loader'}
+            
+            profile = Profile.from_username(self.loader.context, username)
+            fp = self.fingerprint.current_fingerprint
+            response_time = (time.time() - start_time) * 1000
+            
+            result = {
+                "status": "ok",
+                "collected_at": datetime.now().isoformat(),
+                "profile": {
+                    "id": str(profile.userid),
+                    "username": profile.username,
+                    "full_name": profile.full_name if profile.full_name else 'N/A',
+                    "biography": profile.biography[:200] if profile.biography else 'No bio available',
+                    "is_private": profile.is_private,
+                    "is_verified": profile.is_verified,
+                    "is_business_account": profile.is_business_account,
+                    "is_professional_account": hasattr(profile, 'is_professional_account') and profile.is_professional_account,
+                    "category_name": getattr(profile, 'category_name', None),
+                    "business_category_name": getattr(profile, 'business_category_name', None),
+                    "profile_pic_url_hd": getattr(profile, 'profile_pic_url_hd', None) or getattr(profile, 'profile_pic_url', None),
+                    "external_url": profile.external_url if profile.external_url else None,
+                    "followers": profile.followers,
+                    "following": profile.followees,
+                    "posts": profile.mediacount,
+                    "account_creation_year": 2012
+                },
+                "USERNAME": "@KINGFFAIAK47x",
+                "MADE_BY": "ANSH AFT"
+            }
+            
+            return result
+            
+        except instaloader.exceptions.ProfileNotExistsException:
+            return {'status': 'error', 'error': f'Profile @{username} does not exist', 'code': 'INVALID_USER'}
+        except instaloader.exceptions.PrivateProfileNotFollowedException:
+            return {'status': 'error', 'error': f'Profile @{username} is private', 'code': 'PRIVATE_ACCOUNT'}
+        except Exception as e:
+            if "401" in str(e):
+                time.sleep(2)
+                return self.scan_profile(username)
+            else:
+                return {'status': 'error', 'error': str(e)[:100], 'code': 'SCAN_ERROR'}
 
-// Admin Login
-app.post('/admin/login', (req, res) => {
-  const { username, password } = req.body;
-  if (username === CONFIG.adminUsername && password === CONFIG.adminPassword) {
-    res.json({ success: true, redirect: '/dashboard?username=' + username + '&password=' + password });
-  } else {
-    failedLogins.push({ 
-      username, 
-      timestamp: new Date().toISOString(), 
-      ip: req.ip || req.headers['x-forwarded-for'] || 'unknown' 
-    });
-    saveData();
-    res.json({ success: false });
-  }
-});
+scanner = InstagramScanner()
 
-// Admin Stats - REAL-TIME DATA
-app.get('/admin/stats', (req, res) => {
-  const userList = Object.entries(users).map(([username, data]) => ({
-    username,
-    ...data,
-    remaining_minute: CONFIG.rateLimit[data.plan]?.perMinute - data.minuteRequests || 0,
-    remaining_day: CONFIG.rateLimit[data.plan]?.perDay - data.dayRequests || 0
-  }));
-  
-  res.json({
-    totalUsers: Object.keys(users).length,
-    totalRequests: systemStats.totalRequests,
-    ownerUsers: Object.values(users).filter(u => u.plan === 'owner').length,
-    userUsers: Object.values(users).filter(u => u.plan === 'user').length,
-    freeUsers: Object.values(users).filter(u => u.plan === 'free').length,
-    apiStatus: CONFIG.apiStatus,
-    theme: CONFIG.theme,
-    version: CONFIG.version,
-    users: userList,
-    logs: usageLogs.slice(-50),
-    failedLogins: failedLogins.slice(-20),
-    announcements: announcements,
-    uptime: Math.floor((Date.now() - systemStats.startTime) / 1000),
-    maintenance: CONFIG.maintenance,
-    logsEnabled: CONFIG.logsEnabled,
-    timestamp: new Date().toISOString()
-  });
-});
+# ============================================================
+# VALIDATE API KEY
+# ============================================================
+def validate_api_key(api_key):
+    if not api_key:
+        return None, "API key required. Use ?api_key=YOUR_KEY"
+    
+    for username, user_data in USERS.items():
+        if user_data.get('api_key') == api_key:
+            if user_data.get('status') == 'suspended':
+                return None, "Account suspended"
+            return user_data, username
+    
+    return None, "Invalid API key"
 
-// Update API Status
-app.post('/admin/api-status', (req, res) => {
-  const { status } = req.body;
-  if (['online', 'maintenance', 'offline'].includes(status)) {
-    CONFIG.apiStatus = status;
-    saveData();
-    res.json({ success: true, status: CONFIG.apiStatus });
-  } else {
-    res.json({ success: false, error: 'Invalid status' });
-  }
-});
+# ============================================================
+# ROUTES - STATIC FILES
+# ============================================================
+@app.route('/login')
+def login_page():
+    return send_from_directory('.', 'login.html')
 
-// Update API Keys
-app.post('/admin/update-keys', (req, res) => {
-  const { ownerKey, userKey, freeKey } = req.body;
-  if (ownerKey && users['ANSHAFT127987']) {
-    users['ANSHAFT127987'].apiKey = ownerKey;
-  }
-  if (userKey && users['DEMO_USER']) {
-    users['DEMO_USER'].apiKey = userKey;
-  }
-  if (freeKey && users['FREE_USER']) {
-    users['FREE_USER'].apiKey = freeKey;
-  }
-  saveData();
-  res.json({ success: true });
-});
+@app.route('/dashboard')
+def dashboard_page():
+    username = request.args.get('username')
+    password = request.args.get('password')
+    
+    if username and password:
+        if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
+            return send_from_directory('.', 'dashboard.html')
+        else:
+            return redirect('/login?error=Invalid credentials')
+    
+    return redirect('/login?error=Please login first')
 
-// Update Rate Limits
-app.post('/admin/rate-limits', (req, res) => {
-  const { userMin, userDay, ownerMin, ownerDay, freeMin, freeDay } = req.body;
-  if (userMin) CONFIG.rateLimit.user.perMinute = parseInt(userMin);
-  if (userDay) CONFIG.rateLimit.user.perDay = parseInt(userDay);
-  if (ownerMin) CONFIG.rateLimit.owner.perMinute = parseInt(ownerMin);
-  if (ownerDay) CONFIG.rateLimit.owner.perDay = parseInt(ownerDay);
-  if (freeMin) CONFIG.rateLimit.free.perMinute = parseInt(freeMin);
-  if (freeDay) CONFIG.rateLimit.free.perDay = parseInt(freeDay);
-  saveData();
-  res.json({ success: true });
-});
+@app.route('/')
+def home():
+    return send_from_directory('.', 'login.html')
 
-// Update Theme
-app.post('/admin/update-theme', (req, res) => {
-  const { background, color, glowColor } = req.body;
-  if (background) CONFIG.theme.background = background;
-  if (color) CONFIG.theme.color = color;
-  if (glowColor) CONFIG.theme.glowColor = glowColor;
-  saveData();
-  res.json({ success: true });
-});
+# ============================================================
+# API: ADMIN LOGIN - FIXED 404 ERROR
+# ============================================================
+@app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
+def admin_login():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    
+    if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
+        return jsonify({
+            'success': True,
+            'message': 'Login successful',
+            'username': username,
+            'redirect': '/dashboard?username=' + username + '&password=' + password,
+            'developer': 'KINGFFAIAK47x',
+            'owner': 'ANSH_AFT'
+        })
+    else:
+        if FIREBASE_READY and db:
+            try:
+                db.reference('failed_logins').push({
+                    'username': username,
+                    'timestamp': datetime.now().isoformat(),
+                    'ip': request.remote_addr
+                })
+            except:
+                pass
+        return jsonify({
+            'success': False,
+            'error': 'Invalid credentials'
+        }), 401
 
-// Add User
-app.post('/admin/add-user', (req, res) => {
-  const { username, plan } = req.body;
-  if (!username) {
-    return res.json({ success: false, error: 'Username required' });
-  }
-  if (users[username]) {
-    return res.json({ success: false, error: 'User already exists' });
-  }
-  
-  let apiKey;
-  if (plan === 'owner') {
-    apiKey = username.toUpperCase() + '-OWNER-2026';
-  } else if (plan === 'user') {
-    apiKey = username.toUpperCase() + '-USER-2026';
-  } else {
-    apiKey = username.toUpperCase() + '-FREE-2026';
-  }
-  
-  users[username] = {
-    apiKey: apiKey,
-    plan: plan || 'user',
-    minuteRequests: 0,
-    dayRequests: 0,
-    lastMinuteReset: Date.now(),
-    lastDayReset: Date.now(),
-    createdAt: Date.now(),
-    status: 'active'
-  };
-  
-  saveData();
-  res.json({ success: true, apiKey: apiKey });
-});
+# ============================================================
+# API: SCAN PROFILE - FIXED 403 ERROR
+# ============================================================
+@app.route('/api/scan', methods=['GET'])
+def scan_profile_get():
+    start_time = time.time()
+    
+    if CONFIG.get('maintenance', False):
+        return jsonify({
+            'status': 'error',
+            'error': 'API Under Maintenance',
+            'message': 'We are currently upgrading our systems.',
+            'contact': '@KINGFFAIAK47x'
+        }), 503
+    
+    if CONFIG.get('api_status') == 'offline':
+        return jsonify({
+            'status': 'error',
+            'error': 'API Offline',
+            'message': 'API is currently disabled.',
+            'contact': '@KINGFFAIAK47x'
+        }), 503
+    
+    # Get API key from query - FIXED
+    api_key = request.args.get('api_key', '').strip()
+    
+    user_data, username = validate_api_key(api_key)
+    if not user_data:
+        return jsonify({
+            'status': 'error',
+            'code': 'INVALID_KEY',
+            'error': 'Invalid API key',
+            'message': 'The API key provided is not valid',
+            'support': 'https://t.me/KINGFFAIAK47x'
+        }), 403
+    
+    per_minute = user_data.get('per_minute', 100)
+    per_day = user_data.get('per_day', 1000)
+    allowed, msg = check_rate_limit(api_key, per_minute, per_day)
+    
+    if not allowed:
+        return jsonify({
+            'status': 'error',
+            'code': 'RATE_LIMIT',
+            'error': msg,
+            'plan': user_data.get('plan', 'user')
+        }), 429
+    
+    username_param = request.args.get('username', '').strip()
+    
+    if not username_param:
+        return jsonify({
+            'status': 'error',
+            'code': 'NO_USERNAME',
+            'error': 'Username required',
+            'message': 'Please provide username parameter',
+            'example': '/api/scan?username=instagram&api_key=DEMOFUCK'
+        }), 400
+    
+    # Scan with timeout handling
+    try:
+        result = scanner.scan_profile(username_param)
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'code': 'SCAN_ERROR'
+        }), 500
+    
+    if FIREBASE_READY and db and result.get('status') == 'ok':
+        try:
+            db.reference('logs').push({
+                'api_key': api_key[:16] + '...',
+                'username': username_param,
+                'success': True,
+                'response_time': (time.time() - start_time) * 1000,
+                'timestamp': datetime.now().isoformat()
+            })
+        except:
+            pass
+    
+    if result.get('status') == 'ok':
+        result['api_key_used'] = api_key[:16] + '...'
+        result['plan'] = user_data.get('plan', 'user')
+        result['limit_minute'] = per_minute
+        result['limit_day'] = per_day
+        result['remaining_minute'] = per_minute - rate_limit_data.get(api_key, {}).get('minute_count', 0)
+        result['remaining_day'] = per_day - rate_limit_data.get(api_key, {}).get('day_count', 0)
+        result['developer'] = '@KINGFFAIAK47x'
+        result['owner'] = 'ANSH AFT'
+        result['response_time_ms'] = (time.time() - start_time) * 1000
+    
+    return jsonify(result)
 
-// Delete User
-app.post('/admin/delete-user', (req, res) => {
-  const { username } = req.body;
-  if (!users[username]) {
-    return res.json({ success: false, error: 'User not found' });
-  }
-  if (username === 'ANSHAFT127987') {
-    return res.json({ success: false, error: 'Cannot delete owner' });
-  }
-  delete users[username];
-  saveData();
-  res.json({ success: true });
-});
+# ============================================================
+# API: HEALTH
+# ============================================================
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    return jsonify({
+        'status': 'running',
+        'firebase_connected': FIREBASE_READY,
+        'timestamp': datetime.now().isoformat(),
+        'service': 'Instagram Scanner API',
+        'version': CONFIG.get('version', '3.0.0'),
+        'developer': 'KINGFFAIAK47x',
+        'owner': 'ANSH_AFT',
+        'api_status': CONFIG.get('api_status', 'online')
+    })
 
-// Toggle User
-app.post('/admin/toggle-user', (req, res) => {
-  const { username } = req.body;
-  if (!users[username]) {
-    return res.json({ success: false, error: 'User not found' });
-  }
-  users[username].status = users[username].status === 'active' ? 'suspended' : 'active';
-  saveData();
-  res.json({ success: true });
-});
+# ============================================================
+# API: STATUS
+# ============================================================
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    return jsonify({
+        'status': CONFIG.get('api_status', 'online'),
+        'version': CONFIG.get('version', '3.0.0'),
+        'maintenance': CONFIG.get('maintenance', False),
+        'total_users': len(USERS),
+        'timestamp': datetime.now().isoformat(),
+        'developer': 'KINGFFAIAK47x',
+        'owner': 'ANSH_AFT'
+    })
 
-// Reset All
-app.post('/admin/reset-all', (req, res) => {
-  for (const key in users) {
-    users[key].minuteRequests = 0;
-    users[key].dayRequests = 0;
-    users[key].lastMinuteReset = Date.now();
-    users[key].lastDayReset = Date.now();
-  }
-  saveData();
-  res.json({ success: true });
-});
-
-// Clear Logs
-app.post('/admin/clear-logs', (req, res) => {
-  usageLogs = [];
-  saveData();
-  res.json({ success: true });
-});
-
-// Clear Failed Logins
-app.post('/admin/clear-failed-logins', (req, res) => {
-  failedLogins = [];
-  saveData();
-  res.json({ success: true });
-});
-
-// Reset Config
-app.post('/admin/reset-config', (req, res) => {
-  CONFIG.rateLimit.user.perMinute = 100;
-  CONFIG.rateLimit.user.perDay = 1000;
-  CONFIG.rateLimit.owner.perMinute = 10000;
-  CONFIG.rateLimit.owner.perDay = 100000;
-  CONFIG.rateLimit.free.perMinute = 10;
-  CONFIG.rateLimit.free.perDay = 100;
-  CONFIG.theme.background = '#0a0a0a';
-  CONFIG.theme.color = '#00ff41';
-  CONFIG.theme.glowColor = '#00ff41';
-  CONFIG.apiStatus = 'online';
-  CONFIG.maintenance = false;
-  CONFIG.logsEnabled = true;
-  saveData();
-  res.json({ success: true });
-});
-
-// Export Logs
-app.get('/admin/export-logs', (req, res) => {
-  const data = JSON.stringify({ 
-    users, 
-    logs: usageLogs.slice(-500), 
-    stats: systemStats, 
-    config: CONFIG, 
-    failedLogins: failedLogins.slice(-100), 
-    announcements 
-  }, null, 2);
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Content-Disposition', 'attachment; filename=dark_panel_backup.json');
-  res.send(data);
-});
-
-// Add Announcement
-app.post('/admin/add-announcement', (req, res) => {
-  const { message } = req.body;
-  if (!message) {
-    return res.json({ success: false, error: 'Message required' });
-  }
-  announcements.push({ id: Date.now(), message, timestamp: new Date().toISOString() });
-  saveData();
-  res.json({ success: true });
-});
-
-// Delete Announcement
-app.post('/admin/delete-announcement', (req, res) => {
-  const { id } = req.body;
-  announcements = announcements.filter(a => a.id !== parseInt(id));
-  saveData();
-  res.json({ success: true });
-});
-
-// Toggle Logs
-app.post('/admin/toggle-logs', (req, res) => {
-  CONFIG.logsEnabled = !CONFIG.logsEnabled;
-  saveData();
-  res.json({ success: true, logsEnabled: CONFIG.logsEnabled });
-});
-
-// Toggle Maintenance
-app.post('/admin/toggle-maintenance', (req, res) => {
-  CONFIG.maintenance = !CONFIG.maintenance;
-  saveData();
-  res.json({ success: true, maintenance: CONFIG.maintenance });
-});
-
-// ============================================================
-// REAL-TIME UPDATES (WebSocket - Optional)
-// ============================================================
-const server = require('http').createServer(app);
-const io = require('socket.io')(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
-});
-
-// Send real-time updates every 5 seconds
-setInterval(() => {
-  const stats = {
-    totalUsers: Object.keys(users).length,
-    totalRequests: systemStats.totalRequests,
-    uptime: Math.floor((Date.now() - systemStats.startTime) / 1000),
-    apiStatus: CONFIG.apiStatus,
-    maintenance: CONFIG.maintenance,
-    timestamp: new Date().toISOString()
-  };
-  io.emit('stats_update', stats);
-}, 5000);
-
-io.on('connection', (socket) => {
-  console.log('🔌 Client connected');
-  socket.emit('connected', { message: 'Connected to real-time updates' });
-});
-
-// ============================================================
-// START SERVER
-// ============================================================
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log('='.repeat(60));
-  console.log('🔥 INSTAGRAM SCANNER API v3.0 (REAL-TIME)');
-  console.log('='.repeat(60));
-  console.log('👑 Owner: ANSH_AFT');
-  console.log('💻 Developer: KINGFFAIAK47x');
-  console.log('='.repeat(60));
-  console.log('📊 Dashboard: /dashboard?username=ANSHAFT127987&password=ANSHAFTAK47');
-  console.log('📊 API Scan: /api/scan?username=instagram&api_key=DEMOFUCK');
-  console.log('📊 Health: /api/health');
-  console.log('📊 Status: /api/status');
-  console.log('='.repeat(60));
-  console.log('🔑 API Keys:');
-  console.log('   ⭐ Premium: ANSHAFTAK472026');
-  console.log('   🆓 User: DEMOFUCK');
-  console.log('='.repeat(60));
-  console.log('✅ Server running on port ' + PORT);
-});
+# ============================================================
+# RUN
+# ============================================================
+if __name__ == '__main__':
+    print('='*60)
+    print('🔥 INSTAGRAM SCANNER API v3.0')
+    print('='*60)
+    print(f'👑 Owner: ANSH_AFT')
+    print(f'💻 Developer: KINGFFAIAK47x')
+    print('='*60)
+    print('📊 Dashboard: /dashboard?username=ANSHAFT127987&password=ANSHAFTAK47')
+    print('📊 API Scan: /api/scan?username=instagram&api_key=DEMOFUCK')
+    print('📊 Health: /api/health')
+    print('📊 Status: /api/status')
+    print('='*60)
+    print('🔑 API Keys:')
+    print('   ⭐ Premium: ANSHAFTAK472026')
+    print('   🆓 User: DEMOFUCK')
+    print('='*60)
+    app.run(host='0.0.0.0', port=5000, debug=True)
