@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
 from flask_cors import CORS
 import instaloader
 import time
@@ -34,20 +34,64 @@ CONFIG = {
 }
 
 # ============================================================
-# API KEYS
+# API KEYS & USERS
 # ============================================================
 USERS = {
     "ANSHAFT127987": {
         "api_key": "ANSHAFTAK472026",
         "plan": "owner",
-        "status": "active"
+        "status": "active",
+        "per_minute": 10000,
+        "per_day": 100000
     },
     "DEMO_USER": {
         "api_key": "DEMOFUCK",
         "plan": "user",
-        "status": "active"
+        "status": "active",
+        "per_minute": 100,
+        "per_day": 1000
     }
 }
+
+# ============================================================
+# RATE LIMITING
+# ============================================================
+rate_limit_data = {}
+
+def check_rate_limit(api_key, per_minute, per_day):
+    now = time.time()
+    if api_key not in rate_limit_data:
+        rate_limit_data[api_key] = {
+            'minute_count': 0,
+            'day_count': 0,
+            'minute_reset': now,
+            'day_reset': now
+        }
+    
+    data = rate_limit_data[api_key]
+    
+    # Reset minute counter
+    if now - data['minute_reset'] > 60:
+        data['minute_count'] = 0
+        data['minute_reset'] = now
+    
+    # Reset day counter
+    if now - data['day_reset'] > 86400:
+        data['day_count'] = 0
+        data['day_reset'] = now
+    
+    # Check limits
+    if data['minute_count'] >= per_minute:
+        return False, f"Rate limit exceeded. {per_minute} requests per minute"
+    
+    if data['day_count'] >= per_day:
+        return False, f"Rate limit exceeded. {per_day} requests per day"
+    
+    # Increment counters
+    data['minute_count'] += 1
+    data['day_count'] += 1
+    
+    return True, "OK"
 
 # ============================================================
 # FIREBASE INIT
@@ -98,7 +142,7 @@ def init_firebase():
 init_firebase()
 
 # ============================================================
-# DEVICE FINGERPRINTS
+# 8 REAL DEVICE FINGERPRINTS
 # ============================================================
 class UltimateDeviceFingerprint:
     def __init__(self):
@@ -308,12 +352,10 @@ class InstagramScanner:
 scanner = InstagramScanner()
 
 # ============================================================
-# MIDDLEWARE - API KEY VALIDATION
+# VALIDATE API KEY
 # ============================================================
-def validate_api_key(req):
-    """Validate API key from query parameter or header"""
-    api_key = req.args.get('api_key') or req.headers.get('x-api-key')
-    
+def validate_api_key(api_key):
+    """Validate API key from query parameter"""
     if not api_key:
         return None, "API key required. Use ?api_key=YOUR_KEY"
     
@@ -336,7 +378,21 @@ def login_page():
 
 @app.route('/dashboard')
 def dashboard_page():
-    return send_from_directory('.', 'dashboard.html')
+    # Check if credentials are provided in URL
+    username = request.args.get('username')
+    password = request.args.get('password')
+    
+    # If credentials provided, validate them
+    if username and password:
+        if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
+            # Valid credentials - serve dashboard
+            return send_from_directory('.', 'dashboard.html')
+        else:
+            # Invalid credentials - redirect with error
+            return redirect(url_for('login_page', error='Invalid credentials'))
+    
+    # No credentials - redirect to login
+    return redirect(url_for('login_page', error='Please login first'))
 
 @app.route('/<path:path>')
 def serve_static(path):
@@ -372,8 +428,11 @@ def scan_profile_get():
             'contact': '@KINGFFAIAK47x'
         }), 503
     
+    # Get API key from query
+    api_key = request.args.get('api_key', '').strip()
+    
     # Validate API key
-    user_data, username = validate_api_key(request)
+    user_data, username = validate_api_key(api_key)
     if not user_data:
         return jsonify({
             'status': 'error',
@@ -382,6 +441,19 @@ def scan_profile_get():
             'message': 'The API key provided is not valid',
             'support': 'https://t.me/KINGFFAIAK47x'
         }), 403
+    
+    # Check rate limits
+    per_minute = user_data.get('per_minute', 100)
+    per_day = user_data.get('per_day', 1000)
+    allowed, msg = check_rate_limit(api_key, per_minute, per_day)
+    
+    if not allowed:
+        return jsonify({
+            'status': 'error',
+            'code': 'RATE_LIMIT',
+            'error': msg,
+            'plan': user_data.get('plan', 'user')
+        }), 429
     
     # Get username from query
     username_param = request.args.get('username', '').strip()
@@ -402,7 +474,7 @@ def scan_profile_get():
     if FIREBASE_READY and db and result.get('status') == 'ok':
         try:
             db.reference('logs').push({
-                'api_key': user_data.get('api_key', '')[:16] + '...',
+                'api_key': api_key[:16] + '...',
                 'username': username_param,
                 'success': True,
                 'response_time': (time.time() - start_time) * 1000,
@@ -413,16 +485,12 @@ def scan_profile_get():
     
     # Add metadata if success
     if result.get('status') == 'ok':
-        plan = user_data.get('plan', 'user')
-        limits = {
-            'owner': {'perMinute': 10000, 'perDay': 100000},
-            'user': {'perMinute': 100, 'perDay': 1000},
-            'free': {'perMinute': 10, 'perDay': 100}
-        }
-        result['api_key_used'] = user_data.get('api_key', '')[:16] + '...'
-        result['plan'] = plan
-        result['limit_minute'] = limits.get(plan, limits['user'])['perMinute']
-        result['limit_day'] = limits.get(plan, limits['user'])['perDay']
+        result['api_key_used'] = api_key[:16] + '...'
+        result['plan'] = user_data.get('plan', 'user')
+        result['limit_minute'] = per_minute
+        result['limit_day'] = per_day
+        result['remaining_minute'] = per_minute - rate_limit_data.get(api_key, {}).get('minute_count', 0)
+        result['remaining_day'] = per_day - rate_limit_data.get(api_key, {}).get('day_count', 0)
         result['developer'] = '@KINGFFAIAK47x'
         result['owner'] = 'ANSH AFT'
     
@@ -474,7 +542,7 @@ def admin_login():
             'status': 'success',
             'message': 'Login successful',
             'username': username,
-            'redirect': '/dashboard',
+            'redirect': '/dashboard?username=' + username + '&password=' + password,
             'developer': 'KINGFFAIAK47x',
             'owner': 'ANSH_AFT'
         })
@@ -503,7 +571,8 @@ if __name__ == '__main__':
     print(f'👑 Owner: ANSH_AFT')
     print(f'💻 Developer: KINGFFAIAK47x')
     print('='*60)
-    print('📊 API Scan (GET): /api/scan?username=instagram&api_key=DEMOFUCK')
+    print('📊 Dashboard: /dashboard?username=ANSHAFT127987&password=ANSHAFTAK47')
+    print('📊 API Scan: /api/scan?username=instagram&api_key=DEMOFUCK')
     print('📊 Health Check: /api/health')
     print('📊 Status: /api/status')
     print('='*60)
