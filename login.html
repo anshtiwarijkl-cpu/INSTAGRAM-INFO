@@ -6,13 +6,13 @@
     <title>ANSH AFT 🔥 // CYBER HELPER YT</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root { --primary-color: #ff0040; --bg-color: #050505; --card-bg: rgba(10, 10, 10, 0.7); --border-color: rgba(255, 0, 64, 0.3); }
         * { -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: 'Roboto Mono', monospace; background-color: var(--bg-color); color: #e0e0e0; overflow-x: hidden; touch-action: manipulation; min-height: 100vh; }
         #interactive-bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1; }
+        
         .glitch { color: var(--primary-color); text-shadow: 0 0 5px var(--primary-color), 0 0 10px var(--primary-color); animation: glitch 1.5s linear infinite; position: relative; display: inline-block; }
         @keyframes glitch { 2%,64%{ transform: translate(2px,0) skew(0deg); } 4%,60%{ transform: translate(-2px,0) skew(0deg); } 62%{ transform: translate(0,0) skew(5deg); } }
         .glitch:before, .glitch:after { content: attr(data-text); position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: var(--bg-color); overflow: hidden; pointer-events: none; }
@@ -20,9 +20,11 @@
         .glitch:after { left: -2px; text-shadow: -2px 0 #f00; animation: glitch-after 1.5s linear infinite reverse; }
         @keyframes glitch-before { 0%{ clip-path: inset(0 0 90% 0); } 10%{ clip-path: inset(50% 0 30% 0); } 20%{ clip-path: inset(100% 0 1% 0); } 30%{ clip-path: inset(40% 0 45% 0); } 40%{ clip-path: inset(80% 0 5% 0); } 50%{ clip-path: inset(10% 0 70% 0); } 60%{ clip-path: inset(95% 0 2% 0); } 70%{ clip-path: inset(30% 0 60% 0); } 80%{ clip-path: inset(0 0 90% 0); } 90%{ clip-path: inset(60% 0 30% 0); } 100%{ clip-path: inset(10% 0 80% 0); } }
         @keyframes glitch-after { 0%{ clip-path: inset(90% 0 0 0); } 10%{ clip-path: inset(30% 0 50% 0); } 20%{ clip-path: inset(1% 0 100% 0); } 30%{ clip-path: inset(45% 0 40% 0); } 40%{ clip-path: inset(5% 0 80% 0); } 50%{ clip-path: inset(70% 0 10% 0); } 60%{ clip-path: inset(2% 0 95% 0); } 70%{ clip-path: inset(60% 0 30% 0); } 80%{ clip-path: inset(90% 0 0 0); } 90%{ clip-path: inset(30% 0 60% 0); } 100%{ clip-path: inset(80% 0 10% 0); } }
+        
         .terminal-text { white-space: nowrap; overflow: hidden; border-right: .15em solid var(--primary-color); animation: typing 2s steps(30, end), blink-caret .75s step-end infinite; display: inline-block; max-width: 100%; }
         @keyframes typing { from { width: 0 } to { width: 100% } }
         @keyframes blink-caret { from, to { border-color: transparent } 50% { border-color: var(--primary-color); } }
+        
         .glass-ui { background: var(--card-bg); backdrop-filter: blur(12px); border: 1px solid var(--border-color); box-shadow: 0 0 20px rgba(0,0,0,0.5); border-radius: 1rem; }
         .btn { transition: all 0.3s ease; border: 1px solid; cursor: pointer; user-select: none; min-height: 44px; display: flex; align-items: center; justify-content: center; font-weight: 700; border-radius: 0.75rem; padding: 0.75rem 1rem; }
         .btn-primary { background-color: var(--primary-color); color: white; border-color: var(--primary-color); }
@@ -31,6 +33,7 @@
         .btn-secondary:hover, .btn-secondary:active { color: white; border-color: #aaa; }
         .input-field { background-color: rgba(0, 0, 0, 0.5); border: 1px solid var(--border-color); transition: all 0.3s ease; min-height: 48px; font-size: 16px; border-radius: 0.75rem; padding: 0.75rem 1rem; width: 100%; color: #fff; }
         .input-field:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 10px rgba(255, 0, 64, 0.7); }
+        .input-field::placeholder { color: rgba(255,255,255,0.3); }
         .main-content { min-height: 100vh; padding: 1rem; display: flex; align-items: center; justify-content: center; overflow-y: auto; }
         .big-text { font-size: clamp(2.5rem, 8vw, 3.5rem); font-weight: bold; }
         .danger-text { color: #ff0040; text-shadow: 0 0 10px #ff0040, 0 0 20px #ff0040; }
@@ -38,30 +41,13 @@
         .success-text { color: #00ff00; text-shadow: 0 0 10px #00ff00; }
         .hidden { display: none !important; }
         .container { width: 100%; max-width: 600px; margin: 0 auto; padding: 0 0.5rem; }
-        .info-row { display: flex; justify-content: space-between; flex-wrap: wrap; margin-bottom: 0.5rem; padding: 0.5rem; border-bottom: 1px solid rgba(255, 0, 64, 0.2); }
-        .info-label { color: #aaa; font-size: 0.9rem; }
-        .info-value { color: white; font-weight: bold; font-size: 0.95rem; word-break: break-all; }
-        .logout-btn { position: fixed; top: 10px; right: 10px; z-index: 1000; }
-        .example-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; margin-top: 1rem; }
-        .example-btn { padding: 8px 12px; font-size: 0.8rem; background: rgba(255,0,64,0.15); border: 1px solid var(--border-color); border-radius: 0.5rem; color: #eee; cursor: pointer; }
-        .example-btn:active { background: var(--primary-color); }
-        .section-title { color: var(--primary-color); font-size: 1.2rem; margin-bottom: 0.5rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.25rem; }
-        .info-card { background: rgba(0, 0, 0, 0.6); border: 1px solid var(--border-color); border-radius: 10px; padding: 1rem; margin-top: 1rem; }
-        .tab-bar { display: flex; border-bottom: 1px solid var(--border-color); margin-bottom: 1rem; overflow-x: auto; gap: 0.5rem; }
-        .tab { padding: 0.5rem 1rem; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; font-size: 0.9rem; color: #aaa; }
-        .tab.active { border-bottom-color: var(--primary-color); color: var(--primary-color); }
-        #onboarding-info p { margin-bottom: 0.5rem; }
-        .loading-spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid rgba(255,0,64,0.3); border-radius: 50%; border-top-color: var(--primary-color); animation: spin 0.8s linear infinite; margin-right: 8px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .glitch-text { font-size: 1rem; }
-        /* fix for mobile */
-        input, button { font-size: 16px !important; }
         .text-center { text-align: center; }
         .mt-2 { margin-top: 0.5rem; }
         .mt-4 { margin-top: 1rem; }
         .mt-6 { margin-top: 1.5rem; }
         .mb-6 { margin-bottom: 1.5rem; }
         .p-4 { padding: 1rem; }
+        .p-6 { padding: 1.5rem; }
         .rounded-xl { border-radius: 1rem; }
         .w-full { width: 100%; }
         .space-y-4 > * + * { margin-top: 1rem; }
@@ -76,55 +62,177 @@
         .text-gray-400 { color: #9ca3af; }
         .text-lg { font-size: 1.125rem; }
         .text-sm { font-size: 0.875rem; }
+        .text-xs { font-size: 0.75rem; }
         .font-bold { font-weight: 700; }
         .font-semibold { font-weight: 600; }
         .max-h-60 { max-height: 15rem; }
         .overflow-y-auto { overflow-y: auto; }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.15);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 0.75rem 1rem;
+            border-radius: 0.75rem;
+            font-weight: 600;
+            display: none;
+            margin-top: 0.75rem;
+        }
+        .alert.show { display: block; }
+        .alert-success { background: rgba(0, 255, 0, 0.1); border: 1px solid rgba(0, 255, 0, 0.2); color: #86efac; }
+        .alert-error { background: rgba(255, 0, 0, 0.1); border: 1px solid rgba(255, 0, 0, 0.2); color: #fca5a5; }
+        .alert-info { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); color: #93c5fd; }
+
+        .logout-btn {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            padding: 8px 16px;
+            background: rgba(255,0,64,0.2);
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            color: #aaa;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .logout-btn:hover {
+            background: rgba(255,0,64,0.3);
+            color: #fff;
+        }
     </style>
 </head>
 <body>
     <canvas id="interactive-bg"></canvas>
 
-    <!-- ============ LOGIN PAGE ============ -->
+    <!-- ============ MAIN CONTAINER ============ -->
     <div id="login-page" class="main-content">
         <div class="container">
+            <!-- Header -->
             <h1 class="big-text danger-text glitch mb-6" data-text="ANSH AFT 🔥">ANSH AFT 🔥</h1>
-            <p id="terminal-message" class="text-lg text-gray-400 mb-6 terminal-text">CYBER>HELPERYT CONSOLE v5.0</p>
+            <p id="terminal-message" class="text-lg text-gray-400 mb-6 terminal-text">🔥 CYBER>HELPERYT OSINT v5.0</p>
             
+            <!-- Login Box -->
             <div id="login-box" class="w-full">
                 <div class="glass-ui p-6">
-                    <form id="login-form" class="space-y-4">
-                        <input class="input-field" type="text" id="username" placeholder="[ 👤 USERNAME ]" required>
-                        <input class="input-field" type="password" id="password" placeholder="[ 🔒 PASSWORD ]" required>
-                        <button type="submit" class="btn btn-primary w-full">[ LOGIN ]</button>
+                    <form id="login-form" class="space-y-4" onsubmit="handleLogin(event)">
+                        <input class="input-field" type="text" id="loginUsername" placeholder="[ 👤 ENTER USERNAME ]" required>
+                        <input class="input-field" type="password" id="loginPassword" placeholder="[ 🔒 ENTER PASSWORD ]" required>
+                        <button type="submit" class="btn btn-primary w-full" id="loginBtn">[ 🚀 LOGIN ]</button>
                     </form>
-                    <div id="error-message" class="mt-4 bg-red-900/50 text-red-300 p-3 rounded-lg text-center font-semibold hidden">:: WRONG PASSWORD 😞 ::</div>
-                    <div id="success-message" class="mt-4 bg-green-900/50 text-green-300 p-3 rounded-lg text-center font-semibold hidden">:: ACCESS GRANTED! ::</div>
+                    
+                    <!-- Alerts -->
+                    <div id="loginAlert" class="alert"></div>
                 </div>
+                
+                <!-- Guide Button -->
                 <div class="mt-4">
-                    <button id="onboarding-btn" class="btn btn-secondary w-full">[ GUIDE ]</button>
+                    <button id="onboarding-btn" class="btn btn-secondary w-full" onclick="toggleGuide()">[ 📖 GUIDE ]</button>
                 </div>
+                
+                <!-- Guide Info -->
                 <div id="onboarding-info" class="hidden mt-4 glass-ui p-4 text-left text-sm max-h-60 overflow-y-auto">
-                    <p><span class="danger-text">⚠️ WELCOME TO ANSH AFT OSINT 🔥</span></p>
-                    <p>• This is a demonstration tool for cybersecurity enthusiasts.</p>
-                    <p>• Use the login: <span class="text-green-300">admin / admin123</span></p>
-                    <p>• After login, explore the system info & tools.</p>
-                    <p>• Built with ❤️ by CYBER HELPER YT.</p>
+                    <p><span class="danger-text">🔥 WELCOME TO ANSH AFT OSINT 🔥</span></p>
+                    <p class="mt-2">• <span class="text-green-300">Instagram Scanner API</span> - Premium OSINT Tool</p>
+                    <p>• Secure Login System</p>
+                    <p>• Real-time Instagram Profile Scanning</p>
+                    <p>• Built with ❤️ by <span class="text-pink-500">CYBER HELPER YT</span></p>
                     <p class="warning-text mt-2">💀 DANGER ZONE 💀</p>
-                    <p class="text-gray-400">Created by AFT ANSH OSINT🔥</p>
+                    <p class="text-gray-400 text-xs">Developer: @KINGFFAIAK47x | Owner: ANSH_AFT</p>
                 </div>
+                
+                <!-- Footer -->
                 <div class="text-center mt-6">
                     <span class="danger-text text-lg font-bold">💀 DANGER ZONE 💀</span><br>
-                    <span class="warning-text text-sm">Created by AFT ANSH OSINT🔥</span>
+                    <span class="warning-text text-sm">Created by AFT ANSH OSINT 🔥</span><br>
+                    <span class="text-gray-500 text-xs">Developer: @KINGFFAIAK47x</span>
                 </div>
-    </script> 
+            </div>
+        </div>
+    </div>
 
+    <script>
+        // =============================================================
+        // THREE.JS BACKGROUND
+        // =============================================================
+        (function initBackground() {
+            const canvas = document.getElementById('interactive-bg');
+            const scene = new THREE.Scene();
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+            const particlesGeometry = new THREE.BufferGeometry();
+            const particleCount = 1500;
+            const posArray = new Float32Array(particleCount * 3);
+            for (let i = 0; i < particleCount * 3; i++) {
+                posArray[i] = (Math.random() - 0.5) * 100;
+            }
+            particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+
+            const particlesMaterial = new THREE.PointsMaterial({
+                size: 0.2,
+                color: 0xff0040,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending,
+            });
+            const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial);
+            scene.add(particlesMesh);
+
+            camera.position.z = 30;
+
+            let mouseX = 0, mouseY = 0;
+            document.addEventListener('mousemove', (e) => {
+                mouseX = (e.clientX / window.innerWidth) * 2 - 1;
+                mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
+            });
+
+            function animate() {
+                requestAnimationFrame(animate);
+                particlesMesh.rotation.x += 0.0005;
+                particlesMesh.rotation.y += 0.0008;
+                particlesMesh.rotation.x += mouseY * 0.0005;
+                particlesMesh.rotation.y += mouseX * 0.0005;
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        })();
+
+        // =============================================================
+        // GUIDE TOGGLE
+        // =============================================================
+        function toggleGuide() {
+            const el = document.getElementById('onboarding-info');
+            el.classList.toggle('hidden');
+        }
+
+        // =============================================================
+        // LOGIN HANDLER - CREDENTIALS HIDDEN
+        // =============================================================
         const ADMIN = {
             username: "ANSHAFT127987",
             password: "ANSHAFTAK47"
         };
 
-        function handleLogin(e) {
+        async function handleLogin(e) {
             e.preventDefault();
             const username = document.getElementById('loginUsername').value.trim();
             const password = document.getElementById('loginPassword').value.trim();
@@ -139,25 +247,43 @@
             btn.innerHTML = '<span class="spinner"></span> Logging in...';
             btn.disabled = true;
 
-            if (username !== ADMIN.username || password !== ADMIN.password) {
-                db.ref('failed_logins').push({
-                    username: username,
-                    timestamp: new Date().toISOString(),
-                    ip: 'client'
+            // Try API login first
+            try {
+                const response = await fetch('/api/admin/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
                 });
+
+                const data = await response.json();
+
+                if (data.status === 'success') {
+                    showAlert(alertEl, '✅ Login successful! Redirecting...', 'success');
+                    sessionStorage.setItem('admin_session', 'true');
+                    sessionStorage.setItem('admin_user', data.username);
+                    setTimeout(() => {
+                        window.location.href = data.redirect || '/dashboard';
+                    }, 500);
+                    return;
+                }
+            } catch (error) {
+                console.log('API login failed, trying local...');
             }
 
+            // Fallback: Local validation
             setTimeout(() => {
                 if (username === ADMIN.username && password === ADMIN.password) {
                     showAlert(alertEl, '✅ Login successful! Redirecting...', 'success');
                     sessionStorage.setItem('admin_session', 'true');
                     sessionStorage.setItem('admin_user', username);
                     setTimeout(() => {
-                        window.location.href = 'dashboard.html';
+                        window.location.href = '/dashboard';
                     }, 500);
                 } else {
                     showAlert(alertEl, '❌ Invalid username or password!', 'error');
-                    btn.innerHTML = '🚀 Login to Dashboard';
+                    btn.innerHTML = '[ 🚀 LOGIN ]';
                     btn.disabled = false;
                 }
             }, 700);
@@ -172,11 +298,31 @@
             }, 4000);
         }
 
+        // =============================================================
+        // CHECK SESSION
+        // =============================================================
         (function() {
             if (sessionStorage.getItem('admin_session') === 'true') {
-                window.location.href = 'dashboard.html';
+                window.location.href = '/dashboard';
             }
         })();
+
+        // =============================================================
+        // KEYBOARD SHORTCUT: Enter to submit
+        // =============================================================
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const form = document.getElementById('login-form');
+                if (form) {
+                    const submitEvent = new Event('submit');
+                    form.dispatchEvent(submitEvent);
+                }
+            }
+        });
+
+        console.log('🔥 ANSH AFT OSINT v5.0');
+        console.log('👑 Owner: ANSH_AFT');
+        console.log('💻 Developer: @KINGFFAIAK47x');
     </script>
 </body>
 </html>
