@@ -57,7 +57,7 @@ USERS = {
 }
 
 # ============================================================
-# RATE LIMITING (IN-MEMORY)
+# RATE LIMITING
 # ============================================================
 rate_limit_data = {}
 
@@ -264,8 +264,8 @@ class InstagramScanner:
             user_agent = fp['browser']['user_agent']
             
             self.loader = Instaloader(
-                max_connection_attempts=3,
-                request_timeout=30,
+                max_connection_attempts=2,
+                request_timeout=20,
                 user_agent=user_agent,
                 sleep=True,
                 quiet=True
@@ -338,7 +338,7 @@ scanner = InstagramScanner()
 # ============================================================
 def validate_api_key(api_key):
     if not api_key:
-        return None, "API key required. Use ?api_key=YOUR_KEY"
+        return None, "API key required"
     
     for username, user_data in USERS.items():
         if user_data.get('api_key') == api_key:
@@ -373,7 +373,7 @@ def home():
     return send_from_directory('.', 'login.html')
 
 # ============================================================
-# API: ADMIN LOGIN - FIXED 404 ERROR
+# API: ADMIN LOGIN
 # ============================================================
 @app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
 def admin_login():
@@ -394,32 +394,23 @@ def admin_login():
             'owner': 'ANSH_AFT'
         })
     else:
-        if FIREBASE_READY and db:
-            try:
-                db.reference('failed_logins').push({
-                    'username': username,
-                    'timestamp': datetime.now().isoformat(),
-                    'ip': request.remote_addr
-                })
-            except:
-                pass
         return jsonify({
             'success': False,
             'error': 'Invalid credentials'
         }), 401
 
 # ============================================================
-# API: SCAN PROFILE - FIXED 403 ERROR
+# API: SCAN PROFILE - FIXED
 # ============================================================
 @app.route('/api/scan', methods=['GET'])
 def scan_profile_get():
     start_time = time.time()
     
+    # Maintenance check
     if CONFIG.get('maintenance', False):
         return jsonify({
             'status': 'error',
             'error': 'API Under Maintenance',
-            'message': 'We are currently upgrading our systems.',
             'contact': '@KINGFFAIAK47x'
         }), 503
     
@@ -427,12 +418,15 @@ def scan_profile_get():
         return jsonify({
             'status': 'error',
             'error': 'API Offline',
-            'message': 'API is currently disabled.',
             'contact': '@KINGFFAIAK47x'
         }), 503
     
-    # Get API key from query - FIXED
+    # GET API KEY - FIXED: properly get from query
     api_key = request.args.get('api_key', '').strip()
+    
+    # Debug log
+    print(f"🔑 API Key received: {api_key}")
+    print(f"📝 All params: {request.args}")
     
     user_data, username = validate_api_key(api_key)
     if not user_data:
@@ -440,10 +434,11 @@ def scan_profile_get():
             'status': 'error',
             'code': 'INVALID_KEY',
             'error': 'Invalid API key',
-            'message': 'The API key provided is not valid',
-            'support': 'https://t.me/KINGFFAIAK47x'
+            'message': f'Key "{api_key}" is not valid',
+            'valid_keys': ['ANSHAFTAK472026', 'DEMOFUCK']
         }), 403
     
+    # Rate limit check
     per_minute = user_data.get('per_minute', 100)
     per_day = user_data.get('per_day', 1000)
     allowed, msg = check_rate_limit(api_key, per_minute, per_day)
@@ -456,6 +451,7 @@ def scan_profile_get():
             'plan': user_data.get('plan', 'user')
         }), 429
     
+    # GET USERNAME - FIXED
     username_param = request.args.get('username', '').strip()
     
     if not username_param:
@@ -463,11 +459,12 @@ def scan_profile_get():
             'status': 'error',
             'code': 'NO_USERNAME',
             'error': 'Username required',
-            'message': 'Please provide username parameter',
             'example': '/api/scan?username=instagram&api_key=DEMOFUCK'
         }), 400
     
-    # Scan with timeout handling
+    print(f"📱 Scanning: {username_param}")
+    
+    # Scan profile with timeout
     try:
         result = scanner.scan_profile(username_param)
     except Exception as e:
@@ -477,6 +474,7 @@ def scan_profile_get():
             'code': 'SCAN_ERROR'
         }), 500
     
+    # Log to Firebase
     if FIREBASE_READY and db and result.get('status') == 'ok':
         try:
             db.reference('logs').push({
@@ -489,6 +487,7 @@ def scan_profile_get():
         except:
             pass
     
+    # Add metadata
     if result.get('status') == 'ok':
         result['api_key_used'] = api_key[:16] + '...'
         result['plan'] = user_data.get('plan', 'user')
@@ -543,10 +542,8 @@ if __name__ == '__main__':
     print(f'👑 Owner: ANSH_AFT')
     print(f'💻 Developer: KINGFFAIAK47x')
     print('='*60)
-    print('📊 Dashboard: /dashboard?username=ANSHAFT127987&password=ANSHAFTAK47')
-    print('📊 API Scan: /api/scan?username=instagram&api_key=DEMOFUCK')
-    print('📊 Health: /api/health')
-    print('📊 Status: /api/status')
+    print('📊 CORRECT URL FORMAT:')
+    print('   /api/scan?username=USERNAME&api_key=KEY')
     print('='*60)
     print('🔑 API Keys:')
     print('   ⭐ Premium: ANSHAFTAK472026')
