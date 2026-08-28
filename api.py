@@ -13,8 +13,14 @@ from datetime import datetime
 from pathlib import Path
 from instaloader import Instaloader, Profile
 import traceback
-import firebase_admin
-from firebase_admin import credentials, db as firebase_db
+
+try:
+    import firebase_admin
+    from firebase_admin import credentials, db as firebase_db
+    FIREBASE_AVAILABLE = True
+except ImportError:
+    FIREBASE_AVAILABLE = False
+    print("⚠️ Firebase not installed")
 
 app = Flask(__name__, static_folder='.')
 CORS(app)
@@ -26,15 +32,12 @@ DEVELOPER = {
     "name": "KINGFFAIAK47x",
     "telegram": "https://t.me/KINGFFAIAK47x",
     "channel": "https://t.me/+iDnVRYTDnAJmNDE1",
-    "backup_channel": "https://t.me/+aWlMH56c06ZiZTE1",
-    "github": "https://github.com/KINGFFAIAK47x",
-    "instagram": "https://instagram.com/KINGFFAIAK47x"
+    "backup_channel": "https://t.me/+aWlMH56c06ZiZTE1"
 }
 
 OWNER = {
     "name": "ANSH_AFT",
-    "telegram": "https://t.me/ANSH_AFT",
-    "channel": "https://t.me/+iDnVRYTDnAJmNDE1"
+    "telegram": "https://t.me/ANSH_AFT"
 }
 
 # ============================================================
@@ -54,35 +57,45 @@ API_KEYS = {
 }
 
 # ============================================================
-# FIREBASE INIT
+# FIREBASE INIT - YOUR CREDENTIALS DIRECTLY
 # ============================================================
+db = None
+FIREBASE_READY = False
+
 def init_firebase():
+    global db, FIREBASE_READY
+    
+    if not FIREBASE_AVAILABLE:
+        return False
+    
     try:
         if firebase_admin._apps:
+            db = firebase_db
+            FIREBASE_READY = True
             return True
         
-        private_key = os.getenv('FIREBASE_PRIVATE_KEY', '')
-        if private_key:
-            private_key = private_key.strip('"').replace('\\n', '\n')
-        
+        # YOUR FIREBASE CREDENTIALS - DIRECTLY PASTED
         cred_dict = {
-            "type": os.getenv('FIREBASE_TYPE', 'service_account'),
-            "project_id": os.getenv('FIREBASE_PROJECT_ID', 'ansh-aft'),
-            "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID', ''),
-            "private_key": private_key,
-            "client_email": os.getenv('FIREBASE_CLIENT_EMAIL', ''),
-            "client_id": os.getenv('FIREBASE_CLIENT_ID', ''),
-            "auth_uri": os.getenv('FIREBASE_AUTH_URI', 'https://accounts.google.com/o/oauth2/auth'),
-            "token_uri": os.getenv('FIREBASE_TOKEN_URI', 'https://oauth2.googleapis.com/token'),
-            "auth_provider_x509_cert_url": os.getenv('FIREBASE_AUTH_PROVIDER_X509_CERT_URL', 'https://www.googleapis.com/oauth2/v1/certs'),
-            "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_X509_CERT_URL', '')
+            "type": "service_account",
+            "project_id": "ansh-aft",
+            "private_key_id": "54a495a8815a68f488b2e97a627b3768561f9730",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDAdBVfG2zWAgnP\n0LK4OCxjHWGA7Elcojb4//8/KMuuvUUZDZ1xxn6Wm1T1+ILWMvvbVZs4iCPsK9+e\n7mhIsNGWD3EtbIRPXCkpnBRJ7KZ8dm0kIgI1L7WG8NQYY9/hBUJkw9ZptWpg2TaN\nAVWjbfWpqx+O4nieeKd3kzyTl1C5zNaZvde2lVCcHavQvfyfkTDsW5I9XIsnUZsu\n3A+jQFNSFqwfbufxCTSvjI09hYV/GGp8BP7eoLgcx+IXPRJAGfx3jab2wtPMERWs\nLDDcWdXbH9BiZHvG7UiyBSVPopx73zUZ5bO3gzbuWIHeP3s71X9Fo5g/CYvbxfEY\nyNcA7EktAgMBAAECgf9OLtp/yKRuTGWwBxiTvj5KBaWWumcTOtMaVOVcwzX7xuhL\nRTyw+/JxPKlHQ63jVtL6R8zHKodtamVuK2wyG6MJUzynN26Izufp/34+ieUYqwOr\nqiU7diZIq41+WxSYVYqjZOu2Bf0xWwzOO7yOqB0k0GABq/9UYa+m5Cm3y8D/uYLF\nYE38hs40kupIxCDV32AYRg37xKO/qlXyYTn+2aNVtSYbxkq0zwAnwnsyYlBe4J8X\nazlhAWNO6d2G9y7JSEaKooOVPNeqw2NZPtwK+ebu1LRQIP8iaCr+CSuFdZ3srdaA\nIW/1EJf5aXgKKsdYWoonQeqxTyNLDyZx+FD/TgECgYEA7ASDHZUXzamix9vmG1Gk\nR/MOc4ZPu8IyVrgCqs0lJfKiMr/sOPnpvrULH+q08ixiH4waxLqqCE+VmSUPpVhu\n1Th3/lC4G+7gmomdi/HLbBuJRVchEtjsc/d88O6wFPCXEWTxByZSzGwf2HTY65Vq\nhZa5+/9eObeRJsHbFWB7nh0CgYEA0L9aingPQSU9Dibbyat2PL8WmSi3lYHo5+Fl\nRl/DdsOG+dNkKNvMfXO2A5WboDwWT+/Q1bcXQrjDFqFc6JfBJ64TD39Ev3uyzo1O\nIb6nKfjcW+usfm94s770HNp5kugXfld+rFnMmS6D4OpL7mOhaap9IUtrvPdp2lQr\n4bUQqlECgYEAj9IwE9bGqoy0pRVbI0qc0TtLkxpFfCTah/2ZontgJ7+zFzncuNuR\nlKS+IrTjjq99G7xEk50r/+R/RNNQtXEuGMBQXqjRiDQIqiMx3hV54GbnP1nYzaNi\nc0hc2nSY2CnD5NWeCr1Pt0IsJbsOdICYaM9whh8XTBSQXw3Cc0RYEAECgYEAi7Vm\nDYKpAvq/UDdlpiWhbqqdn0gHBoL5tCfANkdldJkMPyvhvw7MX7IPwXphu+47KKji\nZgayBK/PsdexbOIUHlB85URSaK2LUH52KlOFYavzH3ot6jkE2ZgVnTIDZ/T5tE8u\nsn8vVd4x2Vg2FYiMwUGfmab2pnQYXk0zSU57puECgYBdxuwP43Iu3rYXkImm/AtF\nlaUNUDCLxvhZCqMaqfSWcapPrTswCq47fQCEVloRSS6j0i8za1mHqPr6Eum8MHOA\nWEc5Rh6BrHjdlF7TdK8HOJJVc744HgGaXl6s/3Gu9go+iKvm8m1QjOF7pm2VRs5o\ndNo69GveqJ+h1FWs8H5gDw==\n-----END PRIVATE KEY-----\n",
+            "client_email": "firebase-adminsdk-fbsvc@ansh-aft.iam.gserviceaccount.com",
+            "client_id": "116996985410373827841",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40ansh-aft.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com"
         }
         
         cred = credentials.Certificate(cred_dict)
         firebase_admin.initialize_app(cred, {
-            'databaseURL': os.getenv('FIREBASE_DATABASE_URL', 'https://ansh-aft-default-rtdb.firebaseio.com')
+            'databaseURL': 'https://ansh-aft-default-rtdb.firebaseio.com'
         })
         
+        db = firebase_db
+        FIREBASE_READY = True
         print("🔥 Firebase initialized successfully!")
         return True
         
@@ -90,11 +103,11 @@ def init_firebase():
         print(f"❌ Firebase init error: {e}")
         return False
 
-FIREBASE_READY = init_firebase()
-db = firebase_db if FIREBASE_READY else None
+# Initialize Firebase
+init_firebase()
 
 # ============================================================
-# 8 REAL DEVICE FINGERPRINTS - ROTATES EVERY REQUEST
+# 8 REAL DEVICE FINGERPRINTS
 # ============================================================
 class UltimateDeviceFingerprint:
     def __init__(self):
@@ -310,24 +323,20 @@ scanner = InstagramScanner()
 # ROUTES
 # ============================================================
 
-# Serve login page
 @app.route('/login')
 def login_page():
     return send_from_directory('.', 'login.html')
 
-# Serve dashboard page
 @app.route('/dashboard')
 def dashboard_page():
     return send_from_directory('.', 'dashboard.html')
 
-# Serve static files
 @app.route('/<path:path>')
 def serve_static(path):
     if os.path.exists(path):
         return send_from_directory('.', path)
     return jsonify({'error': 'File not found'}), 404
 
-# Root - serve login page by default
 @app.route('/')
 def home():
     return send_from_directory('.', 'login.html')
@@ -339,138 +348,22 @@ def home():
 def health_check():
     return jsonify({
         'status': 'running',
-        'firebase_connected': bool(db),
+        'firebase_connected': FIREBASE_READY,
         'timestamp': datetime.now().isoformat(),
         'service': 'Instagram Scanner API',
         'version': '2.0.0',
         'developer': 'KINGFFAIAK47x',
         'owner': 'ANSH_AFT',
         'telegram': 'https://t.me/+iDnVRYTDnAJmNDE1',
-        'backup': 'https://t.me/+aWlMH56c06ZiZTE1'
+        'backup': 'https://t.me/+aWlMH56c06ZiZTE1',
+        'api_keys': {
+            'premium': 'ANSHAFTAK47',
+            'user': 'DEMOFUCK'
+        },
+        'admin': {
+            'username': 'ANSHAFT127987'
+        }
     })
-
-# ============================================================
-# API: SCAN PROFILE
-# ============================================================
-@app.route('/api/scan', methods=['POST'])
-def scan_profile():
-    start_time = time.time()
-    
-    # Check Firebase
-    if not db:
-        return jsonify({'status': 'error', 'error': '❌ Firebase not connected. Please check credentials.', 'code': 'DB_ERROR'}), 500
-    
-    # Get API key from header
-    api_key = request.headers.get('X-API-Key')
-    if not api_key:
-        return jsonify({'status': 'error', 'error': '❌ API key required', 'code': 'NO_API_KEY'}), 401
-    
-    # Check if it's premium or user key
-    plan = 'free'
-    limit = 1000
-    
-    if api_key == API_KEYS['premium']:
-        plan = 'premium'
-        limit = 10000
-    elif api_key == API_KEYS['user']:
-        plan = 'free'
-        limit = 1000
-    else:
-        # Check Firebase for custom keys
-        users_ref = db.reference('users')
-        users = users_ref.get()
-        user = None
-        user_id = None
-        if users:
-            for uid, data in users.items():
-                if data.get('api_key') == api_key:
-                    user = data
-                    user_id = uid
-                    plan = user.get('plan', 'free')
-                    limit = 10000 if plan == 'premium' else 1000
-                    break
-        
-        if not user:
-            return jsonify({'status': 'error', 'error': '❌ Invalid API key', 'code': 'INVALID_KEY'}), 401
-        
-        if user.get('active') == False:
-            return jsonify({'status': 'error', 'error': '⛔ User account is disabled', 'code': 'ACCOUNT_DISABLED'}), 403
-        
-        # Check rate limit for custom user
-        settings_ref = db.reference('settings')
-        settings = settings_ref.get() or {}
-        limit = settings.get('premium_limit' if plan == 'premium' else 'free_limit', limit)
-        current_requests = user.get('requests_count', 0)
-        
-        if current_requests >= limit:
-            return jsonify({
-                'status': 'error',
-                'error': f'⚠️ {plan.upper()} limit exceeded! {current_requests}/{limit}',
-                'code': 'LIMIT_EXCEEDED',
-                'plan': plan,
-                'current': current_requests,
-                'limit': limit
-            }), 429
-    
-    # Get username from request
-    data = request.get_json()
-    if not data or 'username' not in data:
-        return jsonify({'status': 'error', 'error': '❌ Username required', 'code': 'NO_USERNAME'}), 400
-    
-    username = data['username'].strip()
-    if not username:
-        return jsonify({'status': 'error', 'error': '❌ Username cannot be empty', 'code': 'EMPTY_USERNAME'}), 400
-    
-    # Check maintenance mode
-    settings_ref = db.reference('settings')
-    settings = settings_ref.get() or {}
-    if settings.get('api_status') == 'offline':
-        return jsonify({
-            'status': 'error',
-            'error': '❌ API is currently OFFLINE. Please try again later.',
-            'code': 'API_OFFLINE'
-        }), 503
-    
-    if settings.get('api_status') == 'maintenance':
-        return jsonify({
-            'status': 'error',
-            'error': '🔧 API is under MAINTENANCE. Please try again later.',
-            'code': 'MAINTENANCE'
-        }), 503
-    
-    # Scan Instagram profile
-    result = scanner.scan_profile(username)
-    
-    # Log request
-    log_ref = db.reference('logs')
-    log_ref.push({
-        'api_key': api_key[:16] + '...',
-        'username': username,
-        'success': result.get('status') == 'success',
-        'response_time': (time.time() - start_time) * 1000,
-        'timestamp': datetime.now().isoformat()
-    })
-    
-    # Increment request count for custom users
-    if api_key not in [API_KEYS['premium'], API_KEYS['user']] and user_id and result.get('status') == 'success':
-        today = datetime.now().strftime('%Y-%m-%d')
-        users_ref.child(user_id).update({
-            'requests_count': user.get('requests_count', 0) + 1,
-            'last_request': datetime.now().isoformat()
-        })
-        users_ref.child(user_id).child('daily_requests').child(today).transaction(lambda x: (x or 0) + 1)
-    
-    # Add metadata to response
-    result['plan'] = plan
-    result['limit_used'] = (current_requests + 1) if result.get('status') == 'success' else current_requests
-    result['limit_total'] = limit
-    result['api_key'] = api_key[:16] + '...'
-    result['developer'] = 'KINGFFAIAK47x'
-    result['owner'] = 'ANSH_AFT'
-    result['telegram_channel'] = 'https://t.me/+iDnVRYTDnAJmNDE1'
-    result['backup_channel'] = 'https://t.me/+aWlMH56c06ZiZTE1'
-    
-    return jsonify(result)
 
 # ============================================================
 # API: ADMIN LOGIN
@@ -491,8 +384,7 @@ def admin_login():
             'owner': 'ANSH_AFT'
         })
     else:
-        # Log failed attempt
-        if db:
+        if FIREBASE_READY and db:
             db.reference('failed_logins').push({
                 'username': username,
                 'timestamp': datetime.now().isoformat(),
@@ -500,198 +392,88 @@ def admin_login():
             })
         return jsonify({
             'status': 'error',
-            'error': '❌ Invalid credentials',
-            'code': 'INVALID_CREDENTIALS'
+            'error': '❌ Invalid credentials'
         }), 401
 
 # ============================================================
-# API: GET USERS (Admin)
+# API: SCAN PROFILE
 # ============================================================
-@app.route('/api/admin/users', methods=['GET'])
-def get_users():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    users_ref = db.reference('users')
-    users = users_ref.get() or {}
-    return jsonify(users)
-
-# ============================================================
-# API: CREATE USER (Admin)
-# ============================================================
-@app.route('/api/admin/users', methods=['POST'])
-def create_user():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
+@app.route('/api/scan', methods=['POST'])
+def scan_profile():
+    start_time = time.time()
     
+    # Get API key
+    api_key = request.headers.get('X-API-Key')
+    if not api_key:
+        return jsonify({'status': 'error', 'error': '❌ API key required', 'code': 'NO_API_KEY'}), 401
+    
+    # Check API keys
+    plan = 'free'
+    limit = 1000
+    
+    if api_key == API_KEYS['premium']:
+        plan = 'premium'
+        limit = 10000
+    elif api_key == API_KEYS['user']:
+        plan = 'free'
+        limit = 1000
+    else:
+        # Check Firebase for custom keys
+        if FIREBASE_READY and db:
+            users_ref = db.reference('users')
+            users = users_ref.get()
+            user = None
+            if users:
+                for uid, data in users.items():
+                    if data.get('api_key') == api_key:
+                        user = data
+                        plan = user.get('plan', 'free')
+                        limit = 10000 if plan == 'premium' else 1000
+                        break
+            
+            if not user:
+                return jsonify({'status': 'error', 'error': '❌ Invalid API key', 'code': 'INVALID_KEY'}), 401
+            
+            if user.get('active') == False:
+                return jsonify({'status': 'error', 'error': '⛔ Account disabled', 'code': 'ACCOUNT_DISABLED'}), 403
+        else:
+            return jsonify({'status': 'error', 'error': '❌ Invalid API key', 'code': 'INVALID_KEY'}), 401
+    
+    # Get username
     data = request.get_json()
-    username = data.get('username', '').strip()
-    plan = data.get('plan', 'free')
+    if not data or 'username' not in data:
+        return jsonify({'status': 'error', 'error': '❌ Username required', 'code': 'NO_USERNAME'}), 400
     
+    username = data['username'].strip()
     if not username:
-        return jsonify({'error': 'Username required'}), 400
+        return jsonify({'status': 'error', 'error': '❌ Username cannot be empty', 'code': 'EMPTY_USERNAME'}), 400
     
-    api_key = secrets.token_hex(16)
+    # Scan profile
+    result = scanner.scan_profile(username)
     
-    users_ref = db.reference('users')
-    new_user = {
-        'username': username,
-        'api_key': api_key,
-        'plan': plan,
-        'active': True,
-        'requests_count': 0,
-        'daily_requests': {},
-        'created_at': datetime.now().isoformat(),
-        'last_request': None
-    }
-    users_ref.push(new_user)
+    # Log request
+    if FIREBASE_READY and db:
+        db.reference('logs').push({
+            'api_key': api_key[:16] + '...',
+            'username': username,
+            'success': result.get('status') == 'success',
+            'response_time': (time.time() - start_time) * 1000,
+            'timestamp': datetime.now().isoformat()
+        })
     
-    return jsonify({
-        'status': 'success',
-        'user': new_user,
-        'developer': 'KINGFFAIAK47x',
-        'owner': 'ANSH_AFT'
-    })
+    # Add metadata
+    result['plan'] = plan
+    result['limit_total'] = limit
+    result['api_key'] = api_key[:16] + '...'
+    result['developer'] = 'KINGFFAIAK47x'
+    result['owner'] = 'ANSH_AFT'
+    result['telegram_channel'] = 'https://t.me/+iDnVRYTDnAJmNDE1'
+    result['backup_channel'] = 'https://t.me/+aWlMH56c06ZiZTE1'
+    
+    return jsonify(result)
 
 # ============================================================
-# API: UPDATE USER (Admin)
-# ============================================================
-@app.route('/api/admin/users/<user_id>', methods=['PUT'])
-def update_user(user_id):
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    
-    data = request.get_json()
-    users_ref = db.reference('users')
-    
-    updates = {}
-    if 'plan' in data:
-        updates['plan'] = data['plan']
-    if 'active' in data:
-        updates['active'] = data['active']
-    if 'api_key' in data:
-        updates['api_key'] = data['api_key']
-    
-    if updates:
-        users_ref.child(user_id).update(updates)
-    
-    return jsonify({
-        'status': 'success',
-        'message': 'User updated',
-        'developer': 'KINGFFAIAK47x',
-        'owner': 'ANSH_AFT'
-    })
-
-# ============================================================
-# API: GET SETTINGS (Admin)
-# ============================================================
-@app.route('/api/admin/settings', methods=['GET'])
-def get_settings():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    settings_ref = db.reference('settings')
-    settings = settings_ref.get() or {}
-    return jsonify(settings)
-
-# ============================================================
-# API: UPDATE SETTINGS (Admin)
-# ============================================================
-@app.route('/api/admin/settings', methods=['PUT'])
-def update_settings():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    
-    data = request.get_json()
-    settings_ref = db.reference('settings')
-    
-    updates = {}
-    if 'free_limit' in data:
-        updates['free_limit'] = int(data['free_limit'])
-    if 'premium_limit' in data:
-        updates['premium_limit'] = int(data['premium_limit'])
-    if 'api_status' in data:
-        updates['api_status'] = data['api_status']
-    if 'maintenance_mode' in data:
-        updates['maintenance_mode'] = data['maintenance_mode']
-    
-    updates['last_updated'] = datetime.now().isoformat()
-    
-    if updates:
-        settings_ref.update(updates)
-    
-    return jsonify({
-        'status': 'success',
-        'message': 'Settings updated',
-        'developer': 'KINGFFAIAK47x',
-        'owner': 'ANSH_AFT'
-    })
-
-# ============================================================
-# API: GET LOGS (Admin)
-# ============================================================
-@app.route('/api/admin/logs', methods=['GET'])
-def get_logs():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    logs_ref = db.reference('logs')
-    logs = logs_ref.get() or {}
-    return jsonify(logs)
-
-# ============================================================
-# API: GET FAILED LOGINS (Admin)
-# ============================================================
-@app.route('/api/admin/failed_logins', methods=['GET'])
-def get_failed_logins():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    failed_ref = db.reference('failed_logins')
-    failed = failed_ref.get() or {}
-    return jsonify(failed)
-
-# ============================================================
-# API: CLEAR LOGS (Admin)
-# ============================================================
-@app.route('/api/admin/clear_logs', methods=['DELETE'])
-def clear_logs():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    db.reference('logs').set({})
-    return jsonify({'status': 'success', 'message': 'Logs cleared'})
-
-# ============================================================
-# API: CLEAR FAILED LOGINS (Admin)
-# ============================================================
-@app.route('/api/admin/clear_failed_logins', methods=['DELETE'])
-def clear_failed_logins():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    db.reference('failed_logins').set({})
-    return jsonify({'status': 'success', 'message': 'Failed logins cleared'})
-
-# ============================================================
-# API: RESET ALL (Admin)
-# ============================================================
-@app.route('/api/admin/reset_all', methods=['DELETE'])
-def reset_all():
-    if not db:
-        return jsonify({'error': 'Firebase not connected'}), 500
-    db.reference('logs').set({})
-    db.reference('failed_logins').set({})
-    db.reference('settings').set({
-        'free_limit': 1000,
-        'premium_limit': 10000,
-        'api_status': 'online',
-        'maintenance_mode': False,
-        'last_updated': datetime.now().isoformat()
-    })
-    return jsonify({
-        'status': 'success',
-        'message': 'All data reset',
-        'developer': 'KINGFFAIAK47x',
-        'owner': 'ANSH_AFT'
-    })
-
-# ============================================================
-# RUN APP
+# RUN
 # ============================================================
 if __name__ == '__main__':
     print('='*60)
@@ -705,11 +487,11 @@ if __name__ == '__main__':
     print(f'🔑 Admin: {ADMIN["username"]} / {ADMIN["password"]}')
     print(f'⭐ Premium Key: {API_KEYS["premium"]}')
     print(f'🆓 User Key: {API_KEYS["user"]}')
+    print(f'🔥 Firebase: {"✅ Connected" if FIREBASE_READY else "❌ Not Connected"}')
     print('='*60)
     print('📊 Admin Panel: /login')
     print('📊 Dashboard: /dashboard')
     print('📊 API Health: /api/health')
     print('📊 API Scan: /api/scan (POST)')
     print('='*60)
-    print('🔥 Server Starting...')
     app.run(host='0.0.0.0', port=5000, debug=True)
