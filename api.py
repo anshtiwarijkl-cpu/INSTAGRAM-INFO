@@ -1,9 +1,13 @@
 from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
 from flask_cors import CORS
-from instagram_fetcher import InstagramFetcher
-import os
+import instaloader
 import time
+import random
+import hashlib
+import platform
+import os
 from datetime import datetime
+from instaloader import Instaloader, Profile
 
 app = Flask(__name__, static_folder='.')
 CORS(app)
@@ -76,11 +80,219 @@ def check_rate_limit(api_key, per_minute, per_day):
     return True, "OK"
 
 # ============================================================
+# DEVICE FINGERPRINT
+# ============================================================
+class DeviceFingerprint:
+    def __init__(self):
+        self.user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7; rv:122.0) Gecko/20100101 Firefox/122.0'
+        ]
+        self.index = 0
+    
+    def get_next(self):
+        ua = self.user_agents[self.index % len(self.user_agents)]
+        self.index += 1
+        return {
+            'User-Agent': ua,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Cache-Control': 'max-age=0',
+            'DNT': '1',
+            'Sec-GPC': '1',
+            'Referer': 'https://www.google.com/'
+        }
+
+device_headers = DeviceFingerprint()
+
+# ============================================================
+# INSTAGRAM SCANNER
+# ============================================================
+class InstagramScanner:
+    def __init__(self):
+        self.loader = None
+        self.max_retries = 2
+        self.retry_count = 0
+    
+    def initialize_loader(self):
+        try:
+            headers = device_headers.get_next()
+            
+            self.loader = Instaloader(
+                max_connection_attempts=2,
+                request_timeout=20,
+                user_agent=headers['User-Agent'],
+                sleep=True,
+                quiet=True
+            )
+            
+            if hasattr(self.loader, 'context') and hasattr(self.loader.context, '_session'):
+                for key, value in headers.items():
+                    self.loader.context._session.headers.update({key: value})
+            
+            return True
+            
+        except Exception as e:
+            print(f"Loader init error: {e}")
+            return False
+    
+    def estimate_account_creation_year(self, user_id):
+        id_ranges = [
+            (1, 2010), (100000, 2011), (1000000, 2011), (10000000, 2012),
+            (50000000, 2013), (100000000, 2014), (300000000, 2015),
+            (500000000, 2016), (1000000000, 2017), (3000000000, 2018),
+            (5000000000, 2019), (8000000000, 2020), (12000000000, 2021),
+            (18000000000, 2022), (25000000000, 2023), (35000000000, 2024),
+            (45000000000, 2025),
+        ]
+        
+        try:
+            uid = int(user_id)
+        except:
+            return None
+        
+        for max_id, year in id_ranges:
+            if uid <= max_id:
+                return year
+        
+        if uid > 45000000000:
+            return 2025 + (uid - 45000000000) // 5000000000
+        
+        return None
+    
+    def scan_profile(self, username):
+        self.retry_count = 0
+        return self._scan_with_retry(username)
+    
+    def _scan_with_retry(self, username):
+        start_time = time.time()
+        
+        try:
+            if not self.initialize_loader():
+                return {'status': 'error', 'error': 'Failed to initialize Instagram loader'}
+            
+            profile = Profile.from_username(self.loader.context, username)
+            
+            response_time = (time.time() - start_time) * 1000
+            
+            estimated_year = self.estimate_account_creation_year(profile.userid)
+            
+            # Business fields
+            is_business = False
+            is_professional = False
+            category = None
+            business_category = None
+            
+            try:
+                is_business = profile.is_business_account
+            except:
+                is_business = False
+            
+            try:
+                is_professional = getattr(profile, 'is_professional_account', False)
+            except:
+                is_professional = False
+            
+            try:
+                category = getattr(profile, 'category_name', None)
+                if category == '':
+                    category = None
+            except:
+                category = None
+            
+            try:
+                business_category = getattr(profile, 'business_category_name', None)
+                if business_category == '':
+                    business_category = None
+            except:
+                business_category = None
+            
+            # Highlights
+            highlight_count = getattr(profile, 'highlight_reel_count', 0)
+            has_highlights = getattr(profile, 'has_highlight_reels', False)
+            
+            # IGTV Count
+            try:
+                igtv_count = profile.igtv_count
+            except:
+                igtv_count = 0
+            
+            # Is Joined Recently
+            try:
+                is_joined_recently = getattr(profile, 'is_joined_recently', False)
+            except:
+                is_joined_recently = False
+            
+            # Bio Links
+            bio_links = []
+            try:
+                if hasattr(profile, 'biography_links'):
+                    for link in profile.biography_links:
+                        if isinstance(link, dict) and 'url' in link:
+                            bio_links.append(link['url'])
+                        elif isinstance(link, str):
+                            bio_links.append(link)
+            except:
+                bio_links = []
+            
+            result = {
+                "status": "ok",
+                "collected_at": datetime.now().isoformat(),
+                "response_time_seconds": round(response_time / 1000, 3),
+                "profile": {
+                    "id": str(profile.userid),
+                    "username": profile.username,
+                    "full_name": profile.full_name if profile.full_name else 'N/A',
+                    "biography": profile.biography[:200] if profile.biography else 'No bio available',
+                    "is_private": profile.is_private,
+                    "is_verified": profile.is_verified,       
+                    "is_business_account": is_business,
+                    "is_professional_account": is_professional,
+                    "category_name": category,
+                    "business_category_name": business_category,
+                    "profile_pic_url_hd": getattr(profile, 'profile_pic_url_hd', None) or getattr(profile, 'profile_pic_url', None),
+                    "external_url": profile.external_url if profile.external_url else None,
+                    "followers": profile.followers,
+                    "following": profile.followees,
+                    "posts": profile.mediacount,
+                    "account_creation_year": estimated_year,
+                    "has_highlights": has_highlights or highlight_count > 0,           
+                    "is_joined_recently": is_joined_recently,
+                    "bio_links": bio_links,
+                    "igtv_count": igtv_count
+                },
+                "USERNAME": "@KINGFFAIAK47x",
+                "MADE_BY": "ANSH_AFT"
+            }
+            
+            return result
+            
+        except instaloader.exceptions.ProfileNotExistsException:
+            return {'status': 'error', 'error': f'Profile @{username} does not exist', 'code': 'INVALID_USER'}
+        except instaloader.exceptions.PrivateProfileNotFollowedException:
+            return {'status': 'error', 'error': f'Profile @{username} is private', 'code': 'PRIVATE_ACCOUNT'}
+        except Exception as e:
+            error_msg = str(e)
+            return {'status': 'error', 'error': error_msg[:200], 'code': 'SCAN_ERROR'}
+
+scanner = InstagramScanner()
+
+# ============================================================
 # VALIDATE API KEY
 # ============================================================
 def validate_api_key(api_key):
     if not api_key:
-        return None, "API key required. Use ?api_key=YOUR_KEY"
+        return None, "API key required"
     
     for username, user_data in USERS.items():
         if user_data.get('api_key') == api_key:
@@ -91,15 +303,11 @@ def validate_api_key(api_key):
     return None, "Invalid API key"
 
 # ============================================================
-# INIT FETCHER
-# ============================================================
-fetcher = InstagramFetcher()
-
-# ============================================================
 # ROUTES
 # ============================================================
 
 @app.route('/login')
+@app.route('/login.html')
 def login_page():
     return send_from_directory('.', 'login.html')
 
@@ -127,25 +335,31 @@ def home():
 def scan_profile_get():
     start_time = time.time()
     
-    # Check maintenance
+    # Maintenance check
     if CONFIG.get('maintenance', False):
         return jsonify({
             'status': 'error',
-            'error': 'API Under Maintenance',
-            'message': 'We are currently upgrading our systems.',
-            'contact': '@KINGFFAIAK47x'
+            'code': 'MAINTENANCE',
+            'error': 'API Under Maintenance'
         }), 503
     
     if CONFIG.get('api_status') == 'offline':
         return jsonify({
             'status': 'error',
-            'error': 'API Offline',
-            'message': 'API is currently disabled.',
-            'contact': '@KINGFFAIAK47x'
+            'code': 'API_OFFLINE',
+            'error': 'API Offline'
         }), 503
     
-    # Get API key from query
+    # Get API key
     api_key = request.args.get('api_key', '').strip()
+    
+    if not api_key:
+        return jsonify({
+            'status': 'error',
+            'code': 'NO_API_KEY',
+            'error': 'API key required',
+            'example': '/api/scan?username=instagram&api_key=DEMOFUCK'
+        }), 401
     
     # Validate API key
     user_data, username = validate_api_key(api_key)
@@ -153,12 +367,10 @@ def scan_profile_get():
         return jsonify({
             'status': 'error',
             'code': 'INVALID_KEY',
-            'error': 'Invalid API key',
-            'message': 'The API key provided is not valid',
-            'support': 'https://t.me/KINGFFAIAK47x'
+            'error': 'Invalid API key'
         }), 403
     
-    # Check rate limits
+    # Rate limit
     per_minute = user_data.get('per_minute', 100)
     per_day = user_data.get('per_day', 1000)
     allowed, msg = check_rate_limit(api_key, per_minute, per_day)
@@ -171,7 +383,7 @@ def scan_profile_get():
             'plan': user_data.get('plan', 'user')
         }), 429
     
-    # Get username from query
+    # Get username
     username_param = request.args.get('username', '').strip()
     
     if not username_param:
@@ -179,14 +391,20 @@ def scan_profile_get():
             'status': 'error',
             'code': 'NO_USERNAME',
             'error': 'Username required',
-            'message': 'Please provide username parameter',
             'example': '/api/scan?username=instagram&api_key=DEMOFUCK'
         }), 400
     
-    # Fetch profile from Instagram
-    result = fetcher.fetch_profile(username_param)
+    # Scan
+    try:
+        result = scanner.scan_profile(username_param)
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'code': 'SCAN_ERROR',
+            'error': str(e)[:100]
+        }), 500
     
-    # Add metadata if success
+    # Add metadata
     if result.get('status') == 'ok':
         result['api_key_used'] = api_key[:16] + '...'
         result['plan'] = user_data.get('plan', 'user')
@@ -194,32 +412,6 @@ def scan_profile_get():
         result['limit_day'] = per_day
         result['remaining_minute'] = per_minute - rate_limit_data.get(api_key, {}).get('minute_count', 0)
         result['remaining_day'] = per_day - rate_limit_data.get(api_key, {}).get('day_count', 0)
-        result['developer'] = '@KINGFFAIAK47x'
-        result['owner'] = 'ANSH_AFT'
-        result['channel'] = 'https://t.me/+iDnVRYTDnAJmNDE1'
-        result['backup_channel'] = 'https://t.me/+aWlMH56c06ZiZTE1'
-    
-    return jsonify(result)
-
-# ============================================================
-# API: SCAN PROFILE - POST (NO API KEY)
-# ============================================================
-@app.route('/api/scan', methods=['POST'])
-def scan_profile_post():
-    data = request.get_json() or {}
-    username = data.get('username', '').strip()
-    
-    if not username:
-        return jsonify({
-            'status': 'error',
-            'code': 'NO_USERNAME',
-            'error': 'Username required',
-            'example': '{"username": "instagram"}'
-        }), 400
-    
-    result = fetcher.fetch_profile(username)
-    
-    if result.get('status') == 'ok':
         result['developer'] = '@KINGFFAIAK47x'
         result['owner'] = 'ANSH_AFT'
         result['channel'] = 'https://t.me/+iDnVRYTDnAJmNDE1'
@@ -260,15 +452,18 @@ def api_status():
 # ============================================================
 # API: ADMIN LOGIN
 # ============================================================
-@app.route('/api/admin/login', methods=['POST'])
+@app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
 def admin_login():
+    if request.method == 'OPTIONS':
+        return '', 200
+    
     data = request.get_json()
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     
     if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
         return jsonify({
-            'status': 'success',
+            'success': True,
             'message': 'Login successful',
             'username': username,
             'redirect': '/dashboard?username=' + username + '&password=' + password,
@@ -277,7 +472,7 @@ def admin_login():
         })
     else:
         return jsonify({
-            'status': 'error',
+            'success': False,
             'error': 'Invalid credentials'
         }), 401
 
@@ -292,11 +487,10 @@ if __name__ == '__main__':
     print('💻 Developer: KINGFFAIAK47x')
     print('='*60)
     print('📊 URL FORMAT:')
-    print('   GET  /api/scan?username=USERNAME&api_key=KEY')
-    print('   POST /api/scan { "username": "USERNAME" }')
+    print('   /api/scan?username=USERNAME&api_key=KEY')
     print('='*60)
     print('🔑 API Keys:')
     print('   ⭐ Premium: ANSHAFTAK472026')
     print('   🆓 User: DEMOFUCK')
     print('='*60)
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
