@@ -38,7 +38,7 @@ CONFIG = {
 }
 
 # ============================================================
-# API KEYS & USERS (HIDDEN - NO LEAK)
+# API KEYS & USERS
 # ============================================================
 USERS = {
     "ANSHAFT127987": {
@@ -58,21 +58,18 @@ USERS = {
 }
 
 # ============================================================
-# RATE LIMITING - PRODUCTION SAFE (Firebase backed)
+# RATE LIMITING - PRODUCTION SAFE
 # ============================================================
 rate_limit_data = {}
 
 def check_rate_limit(api_key, per_minute, per_day):
-    """Rate limiting with Firebase persistence"""
     now = time.time()
     
-    # Try to get from Firebase first
     if FIREBASE_READY and db:
         try:
             ref = db.reference(f'rate_limits/{api_key}')
             data = ref.get()
             if data:
-                # Check if reset needed
                 if now - data.get('minute_reset', 0) > 60:
                     data['minute_count'] = 0
                     data['minute_reset'] = now
@@ -92,7 +89,6 @@ def check_rate_limit(api_key, per_minute, per_day):
         except:
             pass
     
-    # Fallback: In-memory
     if api_key not in rate_limit_data:
         rate_limit_data[api_key] = {
             'minute_count': 0,
@@ -123,7 +119,7 @@ def check_rate_limit(api_key, per_minute, per_day):
     return True, "OK"
 
 # ============================================================
-# FIREBASE INIT - OFFICIAL PATTERN
+# FIREBASE INIT
 # ============================================================
 db = None
 FIREBASE_READY = False
@@ -135,7 +131,6 @@ def init_firebase():
         return False
     
     try:
-        # Check if already initialized using official method
         if firebase_admin._apps:
             db = firebase_db
             FIREBASE_READY = True
@@ -172,7 +167,7 @@ def init_firebase():
 init_firebase()
 
 # ============================================================
-# DEVICE FINGERPRINTS - JUST HEADERS (NO FALSE CLAIMS)
+# DEVICE HEADERS (REAL)
 # ============================================================
 class DeviceHeaders:
     def __init__(self):
@@ -208,7 +203,7 @@ class DeviceHeaders:
 device_headers = DeviceHeaders()
 
 # ============================================================
-# INSTAGRAM SCANNER CLASS - NO RECURSION
+# INSTAGRAM SCANNER CLASS
 # ============================================================
 class InstagramScanner:
     def __init__(self):
@@ -239,7 +234,6 @@ class InstagramScanner:
             return False
     
     def scan_profile(self, username):
-        """Scan profile with limited retries - NO RECURSION"""
         self.retry_count = 0
         return self._scan_with_retry(username)
     
@@ -336,7 +330,7 @@ def home():
     return send_from_directory('.', 'login.html')
 
 # ============================================================
-# API: ADMIN LOGIN
+# API: ADMIN LOGIN - FIXED
 # ============================================================
 @app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
 def admin_login():
@@ -363,13 +357,12 @@ def admin_login():
         }), 401
 
 # ============================================================
-# API: SCAN PROFILE - NO KEY LEAK, NO RECURSION
+# API: SCAN PROFILE
 # ============================================================
 @app.route('/api/scan', methods=['GET'])
 def scan_profile_get():
     start_time = time.time()
     
-    # Maintenance check
     if CONFIG.get('maintenance', False):
         return jsonify({
             'status': 'error',
@@ -384,19 +377,16 @@ def scan_profile_get():
             'error': 'API Offline'
         }), 503
     
-    # GET API KEY
     api_key = request.args.get('api_key', '').strip()
     
     user_data, username = validate_api_key(api_key)
     if not user_data:
-        # FIXED: No key leak
         return jsonify({
             'status': 'error',
             'code': 'INVALID_KEY',
             'error': 'Invalid API key'
         }), 403
     
-    # Rate limit check
     per_minute = user_data.get('per_minute', 100)
     per_day = user_data.get('per_day', 1000)
     allowed, msg = check_rate_limit(api_key, per_minute, per_day)
@@ -409,7 +399,6 @@ def scan_profile_get():
             'plan': user_data.get('plan', 'user')
         }), 429
     
-    # GET USERNAME
     username_param = request.args.get('username', '').strip()
     
     if not username_param:
@@ -419,7 +408,6 @@ def scan_profile_get():
             'error': 'Username required'
         }), 400
     
-    # Scan profile
     try:
         result = scanner.scan_profile(username_param)
     except Exception as e:
@@ -429,7 +417,6 @@ def scan_profile_get():
             'error': str(e)
         }), 500
     
-    # Log to Firebase
     if FIREBASE_READY and db and result.get('status') == 'ok':
         try:
             db.reference('logs').push({
@@ -442,7 +429,6 @@ def scan_profile_get():
         except:
             pass
     
-    # Add metadata (NO KEY LEAK)
     if result.get('status') == 'ok':
         result['api_key_used'] = api_key[:16] + '...'
         result['plan'] = user_data.get('plan', 'user')
@@ -485,7 +471,7 @@ def api_status():
     })
 
 # ============================================================
-# RUN - DEBUG DISABLED FOR PRODUCTION
+# RUN
 # ============================================================
 if __name__ == '__main__':
     print('='*60)
