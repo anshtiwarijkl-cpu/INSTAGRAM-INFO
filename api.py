@@ -352,6 +352,7 @@ def validate_api_key(api_key):
 # ROUTES - STATIC FILES
 # ============================================================
 @app.route('/login')
+@app.route('/login.html')
 def login_page():
     return send_from_directory('.', 'login.html')
 
