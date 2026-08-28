@@ -23,34 +23,30 @@ app = Flask(__name__, static_folder='.')
 CORS(app)
 
 # ============================================================
-# DEVELOPER & OWNER INFO
+# CONFIGURATION
 # ============================================================
-DEVELOPER = {
-    "name": "KINGFFAIAK47x",
-    "telegram": "https://t.me/KINGFFAIAK47x",
-    "channel": "https://t.me/+iDnVRYTDnAJmNDE1",
-    "backup_channel": "https://t.me/+aWlMH56c06ZiZTE1"
-}
-
-OWNER = {
-    "name": "ANSH_AFT",
-    "telegram": "https://t.me/ANSH_AFT"
-}
-
-# ============================================================
-# ADMIN CREDENTIALS
-# ============================================================
-ADMIN = {
-    "username": "ANSHAFT127987",
-    "password": "ANSHAFTAK47"
+CONFIG = {
+    "admin_username": "ANSHAFT127987",
+    "admin_password": "ANSHAFTAK47",
+    "version": "3.0.0",
+    "api_status": "online",
+    "maintenance": False
 }
 
 # ============================================================
 # API KEYS
 # ============================================================
-API_KEYS = {
-    "premium": "ANSHAFTAK47",
-    "user": "DEMOFUCK"
+USERS = {
+    "ANSHAFT127987": {
+        "api_key": "ANSHAFTAK472026",
+        "plan": "owner",
+        "status": "active"
+    },
+    "DEMO_USER": {
+        "api_key": "DEMOFUCK",
+        "plan": "user",
+        "status": "active"
+    }
 }
 
 # ============================================================
@@ -102,7 +98,7 @@ def init_firebase():
 init_firebase()
 
 # ============================================================
-# 8 REAL DEVICE FINGERPRINTS
+# DEVICE FINGERPRINTS
 # ============================================================
 class UltimateDeviceFingerprint:
     def __init__(self):
@@ -265,7 +261,6 @@ class InstagramScanner:
             fp = self.fingerprint.current_fingerprint
             response_time = (time.time() - start_time) * 1000
             
-            # Format response exactly as requested
             result = {
                 "status": "ok",
                 "collected_at": datetime.now().isoformat(),
@@ -306,13 +301,30 @@ class InstagramScanner:
     
     def _get_account_year(self, username):
         try:
-            # Try to estimate account creation year from profile
-            # This is a fallback - real year would need more data
-            return 2012  # Default fallback
+            return 2012
         except:
             return 2012
 
 scanner = InstagramScanner()
+
+# ============================================================
+# MIDDLEWARE - API KEY VALIDATION
+# ============================================================
+def validate_api_key(req):
+    """Validate API key from query parameter or header"""
+    api_key = req.args.get('api_key') or req.headers.get('x-api-key')
+    
+    if not api_key:
+        return None, "API key required. Use ?api_key=YOUR_KEY"
+    
+    # Check in USERS dict
+    for username, user_data in USERS.items():
+        if user_data.get('api_key') == api_key:
+            if user_data.get('status') == 'suspended':
+                return None, "Account suspended"
+            return user_data, username
+    
+    return None, "Invalid API key"
 
 # ============================================================
 # ROUTES
@@ -337,74 +349,82 @@ def home():
     return send_from_directory('.', 'login.html')
 
 # ============================================================
-# API: SCAN PROFILE - GET REQUEST WITH QUERY PARAMETERS
+# API: SCAN PROFILE - GET REQUEST
 # ============================================================
 @app.route('/api/scan', methods=['GET'])
 def scan_profile_get():
     start_time = time.time()
     
-    # Get parameters from URL query string
-    username = request.args.get('username', '').strip()
-    api_key = request.args.get('api_key', '').strip()
-    
-    # Validate API key
-    if not api_key:
+    # Check maintenance
+    if CONFIG.get('maintenance', False):
         return jsonify({
             'status': 'error',
-            'error': 'API key required. Use ?api_key=YOUR_KEY',
-            'code': 'NO_API_KEY'
-        }), 401
+            'error': 'API Under Maintenance',
+            'message': 'We are currently upgrading our systems.',
+            'contact': '@KINGFFAIAK47x'
+        }), 503
     
-    # Check API key
-    plan = 'free'
-    limit = 1000
+    if CONFIG.get('api_status') == 'offline':
+        return jsonify({
+            'status': 'error',
+            'error': 'API Offline',
+            'message': 'API is currently disabled.',
+            'contact': '@KINGFFAIAK47x'
+        }), 503
     
-    if api_key == API_KEYS['premium']:
-        plan = 'premium'
-        limit = 10000
-    elif api_key == API_KEYS['user']:
-        plan = 'free'
-        limit = 1000
-    else:
-        # Check Firebase for custom keys
-        if FIREBASE_READY and db:
-            users_ref = db.reference('users')
-            users = users_ref.get()
-            if users:
-                for uid, data in users.items():
-                    if data.get('api_key') == api_key:
-                        plan = data.get('plan', 'free')
-                        limit = 10000 if plan == 'premium' else 1000
-                        break
-                else:
-                    return jsonify({'status': 'error', 'error': 'Invalid API key', 'code': 'INVALID_KEY'}), 401
-            else:
-                return jsonify({'status': 'error', 'error': 'Invalid API key', 'code': 'INVALID_KEY'}), 401
-        else:
-            return jsonify({'status': 'error', 'error': 'Invalid API key', 'code': 'INVALID_KEY'}), 401
+    # Validate API key
+    user_data, username = validate_api_key(request)
+    if not user_data:
+        return jsonify({
+            'status': 'error',
+            'code': 'INVALID_KEY',
+            'error': 'Invalid API key',
+            'message': 'The API key provided is not valid',
+            'support': 'https://t.me/KINGFFAIAK47x'
+        }), 403
     
-    # Validate username
-    if not username:
-        return jsonify({'status': 'error', 'error': 'Username required. Use ?username=INSTAGRAM_USER', 'code': 'NO_USERNAME'}), 400
+    # Get username from query
+    username_param = request.args.get('username', '').strip()
+    
+    if not username_param:
+        return jsonify({
+            'status': 'error',
+            'code': 'NO_USERNAME',
+            'error': 'Username required',
+            'message': 'Please provide username parameter',
+            'example': '/api/scan?username=instagram&api_key=DEMOFUCK'
+        }), 400
     
     # Scan profile
-    result = scanner.scan_profile(username)
+    result = scanner.scan_profile(username_param)
     
     # Log request
     if FIREBASE_READY and db and result.get('status') == 'ok':
-        db.reference('logs').push({
-            'api_key': api_key[:16] + '...',
-            'username': username,
-            'success': True,
-            'response_time': (time.time() - start_time) * 1000,
-            'timestamp': datetime.now().isoformat()
-        })
+        try:
+            db.reference('logs').push({
+                'api_key': user_data.get('api_key', '')[:16] + '...',
+                'username': username_param,
+                'success': True,
+                'response_time': (time.time() - start_time) * 1000,
+                'timestamp': datetime.now().isoformat()
+            })
+        except:
+            pass
     
     # Add metadata if success
     if result.get('status') == 'ok':
-        result['api_key_used'] = api_key[:16] + '...'
+        plan = user_data.get('plan', 'user')
+        limits = {
+            'owner': {'perMinute': 10000, 'perDay': 100000},
+            'user': {'perMinute': 100, 'perDay': 1000},
+            'free': {'perMinute': 10, 'perDay': 100}
+        }
+        result['api_key_used'] = user_data.get('api_key', '')[:16] + '...'
         result['plan'] = plan
-        result['limit_total'] = limit
+        result['limit_minute'] = limits.get(plan, limits['user'])['perMinute']
+        result['limit_day'] = limits.get(plan, limits['user'])['perDay']
+        result['developer'] = '@KINGFFAIAK47x'
+        result['owner'] = 'ANSH AFT'
     
     return jsonify(result)
 
@@ -418,11 +438,26 @@ def health_check():
         'firebase_connected': FIREBASE_READY,
         'timestamp': datetime.now().isoformat(),
         'service': 'Instagram Scanner API',
-        'version': '2.0.0',
+        'version': CONFIG.get('version', '3.0.0'),
         'developer': 'KINGFFAIAK47x',
-        'owner': 'ANSH_AFT',
+        'owner': 'ANSH AFT',
         'telegram': 'https://t.me/+iDnVRYTDnAJmNDE1',
-        'backup': 'https://t.me/+aWlMH56c06ZiZTE1'
+        'api_status': CONFIG.get('api_status', 'online')
+    })
+
+# ============================================================
+# API: STATUS
+# ============================================================
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    return jsonify({
+        'status': CONFIG.get('api_status', 'online'),
+        'version': CONFIG.get('version', '3.0.0'),
+        'maintenance': CONFIG.get('maintenance', False),
+        'total_users': len(USERS),
+        'timestamp': datetime.now().isoformat(),
+        'developer': 'KINGFFAIAK47x',
+        'owner': 'ANSH_AFT'
     })
 
 # ============================================================
@@ -434,7 +469,7 @@ def admin_login():
     username = data.get('username', '').strip()
     password = data.get('password', '').strip()
     
-    if username == ADMIN['username'] and password == ADMIN['password']:
+    if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
         return jsonify({
             'status': 'success',
             'message': 'Login successful',
@@ -445,11 +480,14 @@ def admin_login():
         })
     else:
         if FIREBASE_READY and db:
-            db.reference('failed_logins').push({
-                'username': username,
-                'timestamp': datetime.now().isoformat(),
-                'ip': request.remote_addr
-            })
+            try:
+                db.reference('failed_logins').push({
+                    'username': username,
+                    'timestamp': datetime.now().isoformat(),
+                    'ip': request.remote_addr
+                })
+            except:
+                pass
         return jsonify({
             'status': 'error',
             'error': 'Invalid credentials'
@@ -460,14 +498,17 @@ def admin_login():
 # ============================================================
 if __name__ == '__main__':
     print('='*60)
-    print('🔥 INSTAGRAM SCANNER API - PREMIUM')
+    print('🔥 INSTAGRAM SCANNER API v3.0')
     print('='*60)
-    print(f'👑 Owner: {OWNER["name"]}')
-    print(f'💻 Developer: {DEVELOPER["name"]}')
-    print(f'📺 Channel: {DEVELOPER["channel"]}')
-    print(f'📺 Backup: {DEVELOPER["backup_channel"]}')
+    print(f'👑 Owner: ANSH_AFT')
+    print(f'💻 Developer: KINGFFAIAK47x')
     print('='*60)
     print('📊 API Scan (GET): /api/scan?username=instagram&api_key=DEMOFUCK')
     print('📊 Health Check: /api/health')
+    print('📊 Status: /api/status')
+    print('='*60)
+    print('🔑 API Keys:')
+    print('   ⭐ Premium: ANSHAFTAK472026')
+    print('   🆓 User: DEMOFUCK')
     print('='*60)
     app.run(host='0.0.0.0', port=5000, debug=True)
