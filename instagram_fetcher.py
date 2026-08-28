@@ -1,28 +1,21 @@
 import instaloader
 import time
-import json
 import random
 import hashlib
 import platform
 from datetime import datetime
-from instaloader import Instaloader, Profile
-import traceback
 
-# ============================================================================
-# 8 REAL DEVICE FINGERPRINTS - ROTATES EVERY REQUEST
-# ============================================================================
-
-class UltimateDeviceFingerprint:
+# ============================================================
+# DEVICE FINGERPRINT - ROTATES
+# ============================================================
+class DeviceFingerprint:
     def __init__(self):
         self.fingerprint = {}
         self.generation_count = 0
-        self.rotation_counter = 0
-        self.rotation_interval = 3
         self._generate_fingerprint()
     
     def _generate_fingerprint(self):
         self.generation_count += 1
-        self.rotation_counter += 1
         system = platform.system()
         
         browsers = [
@@ -63,77 +56,34 @@ class UltimateDeviceFingerprint:
             (1920, 1080), (2560, 1440), (3840, 2160),
             (1366, 768), (1536, 864), (1440, 900),
             (1600, 900), (1280, 720), (1920, 1200),
-            (2560, 1600), (3440, 1440), (1360, 768),
-            (1280, 800), (1440, 810), (1680, 1050),
-            (1024, 768), (1280, 1024), (1360, 768)
+            (2560, 1600), (3440, 1440), (1360, 768)
         ]
         width, height = random.choice(screens)
         
         languages = ['en-US', 'en-GB', 'en-IN', 'en-AU', 'en-CA', 
                     'es-ES', 'fr-FR', 'de-DE', 'it-IT', 'pt-BR',
-                    'ja-JP', 'ko-KR', 'zh-CN', 'ru-RU', 'ar-SA',
-                    'nl-NL', 'sv-SE', 'no-NO', 'da-DK', 'fi-FI']
+                    'ja-JP', 'ko-KR', 'zh-CN', 'ru-RU', 'ar-SA']
         
         timezones = ['America/New_York', 'America/Los_Angeles', 'Europe/London', 
                     'Europe/Paris', 'Asia/Kolkata', 'Asia/Tokyo', 'Australia/Sydney',
-                    'America/Sao_Paulo', 'Africa/Johannesburg', 'Asia/Dubai',
-                    'America/Chicago', 'America/Toronto', 'Europe/Berlin',
-                    'Asia/Singapore', 'Asia/Shanghai', 'America/Mexico_City']
-        
-        fonts = [
-            'Arial, Helvetica, sans-serif',
-            'Times New Roman, Times, serif',
-            'Courier New, Courier, monospace',
-            'Georgia, serif',
-            'Verdana, Arial, sans-serif',
-            'Tahoma, Arial, sans-serif',
-            'Trebuchet MS, Arial, sans-serif',
-            'Palatino Linotype, Book Antiqua, Palatino, serif',
-            'Lucida Grande, Lucida Sans Unicode, Arial, sans-serif',
-            'Helvetica Neue, Arial, sans-serif'
-        ]
+                    'America/Sao_Paulo', 'Africa/Johannesburg', 'Asia/Dubai']
         
         self.fingerprint = {
             'browser': browser,
-            'screen': {
-                'width': width,
-                'height': height,
-                'color_depth': random.choice([24, 30, 32]),
-                'pixel_ratio': round(random.uniform(1, 3), 1)
-            },
+            'screen': {'width': width, 'height': height},
             'language': random.choice(languages),
             'timezone': random.choice(timezones),
             'platform': system,
-            'platform_version': platform.version(),
-            'cpu_cores': random.choice([2, 4, 6, 8, 10, 12, 16, 20, 24, 32]),
-            'memory': random.choice(['4 GB', '8 GB', '16 GB', '32 GB', '64 GB', '128 GB', '256 GB']),
+            'cpu_cores': random.choice([4, 6, 8, 10, 12, 16]),
+            'memory': random.choice(['8 GB', '16 GB', '32 GB', '64 GB']),
             'gpu': random.choice([
-                'NVIDIA GeForce RTX 3060', 'NVIDIA GeForce RTX 3070', 'NVIDIA GeForce RTX 3080',
-                'NVIDIA GeForce RTX 3090', 'NVIDIA GeForce RTX 4060', 'NVIDIA GeForce RTX 4070',
-                'NVIDIA GeForce RTX 4080', 'NVIDIA GeForce RTX 4090', 'AMD Radeon RX 6800 XT',
-                'AMD Radeon RX 6900 XT', 'AMD Radeon RX 7800 XT', 'AMD Radeon RX 7900 XTX',
-                'Intel Iris Xe Graphics', 'Intel UHD Graphics 620', 'Apple M1 GPU',
-                'Apple M2 GPU', 'Apple M3 GPU', 'Apple M3 Pro GPU', 'Apple M3 Max GPU'
+                'NVIDIA GeForce RTX 3060', 'NVIDIA GeForce RTX 3080', 'NVIDIA GeForce RTX 4090',
+                'AMD Radeon RX 6800 XT', 'AMD Radeon RX 7900 XTX', 'Apple M2 GPU', 'Apple M3 GPU'
             ]),
-            'fonts': random.choice(fonts),
-            'canvas_hash': hashlib.md5(str(random.randint(1, 99999999)).encode()).hexdigest()[:16],
-            'webgl_hash': hashlib.md5(str(random.randint(1, 99999999)).encode()).hexdigest()[:16],
-            'audio_hash': hashlib.md5(str(random.randint(1, 99999999)).encode()).hexdigest()[:16],
-            'webgl_vendor': random.choice(['Google Inc.', 'Apple Inc.', 'Mozilla Foundation', 'NVIDIA Corporation', 'AMD', 'Intel Corporation']),
-            'webgl_renderer': random.choice([
-                'ANGLE (NVIDIA, NVIDIA GeForce RTX 3080, Direct3D11 vs_5_0 ps_5_0, D3D11)', 
-                'ANGLE (AMD, AMD Radeon RX 6800 XT, Direct3D11 vs_5_0 ps_5_0, D3D11)',
-                'ANGLE (Intel, Intel(R) UHD Graphics 620, Direct3D11 vs_5_0 ps_5_0, D3D11)',
-                'ANGLE (NVIDIA, NVIDIA GeForce RTX 4090, Direct3D12 vs_6_0 ps_6_0, D3D12)',
-                'ANGLE (AMD, AMD Radeon RX 7900 XTX, Direct3D12 vs_6_0 ps_6_0, D3D12)'
-            ]),
-            'fingerprint_id': hashlib.md5(str(time.time() + random.random()).encode()).hexdigest(),
+            'fingerprint_id': hashlib.md5(str(time.time() + random.random()).encode()).hexdigest()[:16],
             'generated_at': datetime.now().isoformat(),
             'generation': self.generation_count
         }
-    
-    def get_fingerprint(self):
-        return self.fingerprint
     
     def get_headers(self):
         return {
@@ -156,45 +106,40 @@ class UltimateDeviceFingerprint:
             'Sec-Ch-Ua-Platform': f'"{self.fingerprint["platform"]}"'
         }
     
-    def rotate(self):
-        self._generate_fingerprint()
+    def get_fingerprint(self):
         return self.fingerprint
-    
-    def should_rotate(self):
-        return self.rotation_counter >= self.rotation_interval
 
 
-
-# ============================================================================
-# INSTAGRAM SCANNER 
-# ============================================================================
-
-class InstagramScanner:
+# ============================================================
+# INSTAGRAM FETCHER
+# ============================================================
+class InstagramFetcher:
     def __init__(self):
-        self.fingerprint = UltimateDeviceFingerprint()
+        self.fingerprint = DeviceFingerprint()
         self.loader = None
+        self.max_retries = 2
+        self.retry_count = 0
     
     def initialize_loader(self):
         try:
-            fp = self.fingerprint.get_fingerprint()
-            user_agent = fp['browser']['user_agent']
+            headers = self.fingerprint.get_headers()
             
-            self.loader = Instaloader(
-                max_connection_attempts=5,
-                request_timeout=45,
-                user_agent=user_agent,
+            self.loader = instaloader.Instaloader(
+                max_connection_attempts=3,
+                request_timeout=30,
+                user_agent=headers['User-Agent'],
                 sleep=True,
                 quiet=True
             )
             
             if hasattr(self.loader, 'context') and hasattr(self.loader.context, '_session'):
-                headers = self.fingerprint.get_headers()
                 for key, value in headers.items():
                     self.loader.context._session.headers.update({key: value})
             
             return True
             
         except Exception as e:
+            print(f"Loader init error: {e}")
             return False
     
     def estimate_account_creation_year(self, user_id):
@@ -221,17 +166,19 @@ class InstagramScanner:
         
         return None
     
-    def scan_profile(self, username):
+    def fetch_profile(self, username):
         start_time = time.time()
-        result = {}
+        self.retry_count = 0
+        return self._fetch_with_retry(username)
+    
+    def _fetch_with_retry(self, username):
+        start_time = time.time()
         
         try:
             if not self.initialize_loader():
-                result['error'] = 'Failed to initialize'
-                print(json.dumps(result, indent=2))
-                return
+                return {'status': 'error', 'error': 'Failed to initialize Instagram loader'}
             
-            profile = Profile.from_username(self.loader.context, username)
+            profile = instaloader.Profile.from_username(self.loader.context, username)
             fp = self.fingerprint.get_fingerprint()
             
             response_time = (time.time() - start_time) * 1000
@@ -272,21 +219,19 @@ class InstagramScanner:
             highlight_count = getattr(profile, 'highlight_reel_count', 0)
             has_highlights = getattr(profile, 'has_highlight_reels', False)
             
-            # ============ FIXED: 3 FIELDS WITH PROPER ERROR HANDLING ============
-            
-            # 1. IGTV Count - 100% work karega agar attribute hai
+            # IGTV Count
             try:
                 igtv_count = profile.igtv_count
             except:
                 igtv_count = 0
             
-            # 2. Is Joined Recently
+            # Is Joined Recently
             try:
                 is_joined_recently = getattr(profile, 'is_joined_recently', False)
             except:
                 is_joined_recently = False
             
-            # 3. Bio Links
+            # Bio Links
             bio_links = []
             try:
                 if hasattr(profile, 'biography_links'):
@@ -321,10 +266,11 @@ class InstagramScanner:
                     "account_creation_year": estimated_year,
                     "has_highlights": has_highlights or highlight_count > 0,           
                     "is_joined_recently": is_joined_recently,
-                    "bio_links": bio_links
+                    "bio_links": bio_links,
+                    "igtv_count": igtv_count
                 },
                 "USERNAME": "@KINGFFAIAK47x",
-                "MADE_BY": "ANSH AFT"
+                "MADE_BY": "ANSH_AFT"
             }
             
             return result
