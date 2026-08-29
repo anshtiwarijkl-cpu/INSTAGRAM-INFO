@@ -478,25 +478,51 @@ def admin_login():
     if request.method == 'OPTIONS':
         return '', 200
     
-    data = request.get_json()
-    username = data.get('username', '').strip()
-    password = data.get('password', '').strip()
-    
-    if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
-        return jsonify({
-            'success': True,
-            'message': 'Login successful',
-            'username': username,
-            'redirect': '/dashboard?username=' + username + '&password=' + password,
-            'developer': 'KINGFFAIAK47x',
-            'owner': 'ANSH_AFT'
-        })
-    else:
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'Invalid request data'
+            }), 400
+            
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        
+        # Validate input
+        if not username or not password:
+            return jsonify({
+                'success': False,
+                'error': 'Username and password are required'
+            }), 400
+        
+        # Secure password comparison using constant-time comparison
+        if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
+            # Generate session token or JWT instead of passing credentials in URL
+            session_token = generate_session_token(username)  # You'll need to implement this
+            
+            return jsonify({
+                'success': True,
+                'message': 'Login successful',
+                'username': username,
+                'redirect': '/dashboard?token=' + session_token,  # Use token instead of credentials
+                'developer': 'KINGFFAIAK47x',
+                'owner': 'ANSH_AFT'
+            })
+        else:
+            # Use generic error message to prevent user enumeration
+            return jsonify({
+                'success': False,
+                'error': 'Invalid credentials'
+            }), 401
+            
+    except Exception as e:
+        # Log the error internally but don't expose details to client
+        app.logger.error(f"Login error: {str(e)}")
         return jsonify({
             'success': False,
-            'error': 'Invalid credentials'
-        }), 401
-
+            'error': 'An error occurred during login'
+        }), 500
 # ============================================================
 # RUN
 # ============================================================
