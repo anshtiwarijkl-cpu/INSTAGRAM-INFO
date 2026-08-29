@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_from_directory, redirect, url_for
+from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, session
 from flask_cors import CORS
 import instaloader
 import time
@@ -6,10 +6,14 @@ import random
 import hashlib
 import platform
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from instaloader import Instaloader, Profile
+import secrets
+import jwt
+from functools import wraps
 
 app = Flask(__name__, static_folder='.')
+app.secret_key = secrets.token_hex(32)  # Secret key for sessions
 CORS(app)
 
 # ============================================================
@@ -20,7 +24,8 @@ CONFIG = {
     "admin_password": "ANSHAFTAK47",
     "version": "3.0.0",
     "api_status": "online",
-    "maintenance": False
+    "maintenance": False,
+    "secret_key": secrets.token_hex(32)  # For JWT
 }
 
 # ============================================================
@@ -42,6 +47,43 @@ USERS = {
         "per_day": 1000
     }
 }
+
+# ============================================================
+# TOKEN GENERATION & VERIFICATION
+# ============================================================
+def generate_session_token(username):
+    """Generate secure JWT token for session"""
+    payload = {
+        'username': username,
+        'exp': datetime.utcnow() + timedelta(hours=24),  # 24 hours expiry
+        'iat': datetime.utcnow()
+    }
+    return jwt.encode(payload, CONFIG['secret_key'], algorithm='HS256')
+
+def verify_session_token(token):
+    """Verify JWT token and return username if valid"""
+    try:
+        payload = jwt.decode(token, CONFIG['secret_key'], algorithms=['HS256'])
+        return payload.get('username')
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
+
+def login_required(f):
+    """Decorator to protect routes that require login"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = request.args.get('token') or request.cookies.get('session_token')
+        if not token:
+            return redirect(url_for('login_page', error='Please login first'))
+        
+        username = verify_session_token(token)
+        if not username:
+            return redirect(url_for('login_page', error='Session expired or invalid'))
+        
+        return f(*args, **kwargs)
+    return decorated_function
 
 # ============================================================
 # GLOBAL RATE LIMITER - PREVENT MULTIPLE INSTANCES
@@ -144,7 +186,6 @@ class InstagramScanner:
     
     def initialize_loader(self):
         try:
-            # WAIT FOR RATE LIMIT
             wait_for_rate_limit()
             
             headers = device_headers.get_next()
@@ -330,20 +371,21 @@ def validate_api_key(api_key):
 @app.route('/login')
 @app.route('/login.html')
 def login_page():
+    error = request.args.get('error')
     return send_from_directory('.', 'login.html')
 
 @app.route('/dashboard')
+@login_required
 def dashboard_page():
-    username = request.args.get('username')
-    password = request.args.get('password')
-    
-    if username and password:
-        if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
-            return send_from_directory('.', 'dashboard.html')
-        else:
-            return redirect(url_for('login_page', error='Invalid credentials'))
-    
-    return redirect(url_for('login_page', error='Please login first'))
+    """Protected dashboard route - only accessible with valid token"""
+    return send_from_directory('.', 'dashboard.html')
+
+@app.route('/logout')
+def logout():
+    """Clear session and redirect to login"""
+    resp = redirect(url_for('login_page'))
+    resp.set_cookie('session_token', '', expires=0)  # Clear cookie
+    return resp
 
 @app.route('/')
 def home():
@@ -471,7 +513,7 @@ def api_status():
     })
 
 # ============================================================
-# API: ADMIN LOGIN
+# API: ADMIN LOGIN (FIXED)
 # ============================================================
 @app.route('/api/admin/login', methods=['POST', 'OPTIONS'])
 def admin_login():
@@ -496,33 +538,45 @@ def admin_login():
                 'error': 'Username and password are required'
             }), 400
         
-        # Secure password comparison using constant-time comparison
+        # Check credentials
         if username == CONFIG['admin_username'] and password == CONFIG['admin_password']:
-            # Generate session token or JWT instead of passing credentials in URL
-            session_token = generate_session_token(username)  # You'll need to implement this
+            # Generate session token
+            session_token = generate_session_token(username)
             
-            return jsonify({
+            # Create response with token
+            response = jsonify({
                 'success': True,
                 'message': 'Login successful',
                 'username': username,
-                'redirect': '/dashboard?token=' + session_token,  # Use token instead of credentials
+                'redirect': '/dashboard?token=' + session_token,
                 'developer': 'KINGFFAIAK47x',
                 'owner': 'ANSH_AFT'
             })
+            
+            # Set cookie for session persistence
+            response.set_cookie(
+                'session_token', 
+                session_token,
+                max_age=24*60*60,  # 24 hours
+                httponly=True,
+                secure=False,  # Set to True in production with HTTPS
+                samesite='Lax'
+            )
+            
+            return response
         else:
-            # Use generic error message to prevent user enumeration
             return jsonify({
                 'success': False,
                 'error': 'Invalid credentials'
             }), 401
             
     except Exception as e:
-        # Log the error internally but don't expose details to client
         app.logger.error(f"Login error: {str(e)}")
         return jsonify({
             'success': False,
             'error': 'An error occurred during login'
         }), 500
+
 # ============================================================
 # RUN
 # ============================================================
@@ -539,5 +593,9 @@ if __name__ == '__main__':
     print('🔑 API Keys:')
     print('   ⭐ Premium: ANSHAFTAK472026')
     print('   🆓 User: DEMOFUCK')
+    print('='*60)
+    print('🔐 Admin Login:')
+    print(f'   Username: {CONFIG["admin_username"]}')
+    print(f'   Password: {CONFIG["admin_password"]}')
     print('='*60)
     app.run(host='0.0.0.0', port=5000, debug=False)
